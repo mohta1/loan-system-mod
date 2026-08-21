@@ -1,8 +1,68 @@
-using LoanSystem.Modules.Borrowers.Application;using LoanSystem.Modules.Borrowers.Domain;using Microsoft.EntityFrameworkCore;
+using LoanSystem.Modules.Borrowers.Application;
+using LoanSystem.Modules.Borrowers.Domain;
+using Microsoft.EntityFrameworkCore;
+
 namespace LoanSystem.Modules.Borrowers.Infrastructure;
-public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> options):DbContext(options),IBorrowerStore
+
+public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> options) : DbContext(options), IBorrowerStore
 {
- public DbSet<Borrower> Borrowers=>Set<Borrower>(); protected override void OnModelCreating(ModelBuilder m){var b=m.Entity<Borrower>();b.ToTable("borrowers","borrowers");b.HasKey(x=>x.Id);b.Property(x=>x.CivilNumber).HasMaxLength(100).IsRequired();b.HasIndex(x=>x.CivilNumber).IsUnique();b.Property(x=>x.EmployeeNumber).HasMaxLength(100);b.HasIndex(x=>x.EmployeeNumber).IsUnique().HasFilter("[EmployeeNumber] IS NOT NULL");b.Property(x=>x.FullName).HasMaxLength(200).IsRequired();b.HasIndex(x=>x.FullName);b.Property(x=>x.PhoneNumber).HasMaxLength(50);b.Property(x=>x.Nationality).HasMaxLength(100).IsRequired();b.Property(x=>x.Organization).HasMaxLength(200).IsRequired();b.HasIndex(x=>x.Organization);b.Property(x=>x.RankGrade).HasMaxLength(100);b.Property(x=>x.EmploymentInformation).HasMaxLength(1000);b.Property(x=>x.Status).HasConversion<string>().HasMaxLength(20);b.HasIndex(x=>x.Status);b.Property(x=>x.RowVersion).IsRowVersion();}
- public Task<bool>CivilExistsAsync(string v,Guid? e,CancellationToken ct)=>Borrowers.AnyAsync(x=>x.CivilNumber==v&&(!e.HasValue||x.Id!=e),ct);public Task<bool>EmployeeExistsAsync(string v,Guid? e,CancellationToken ct)=>Borrowers.AnyAsync(x=>x.EmployeeNumber==v&&(!e.HasValue||x.Id!=e),ct);public Task AddAsync(Borrower b,CancellationToken ct)=>Borrowers.AddAsync(b,ct).AsTask();public Task<Borrower?>FindAsync(Guid id,CancellationToken ct)=>Borrowers.SingleOrDefaultAsync(x=>x.Id==id,ct);public void ExpectVersion(Borrower b,byte[] v)=>Entry(b).Property(x=>x.RowVersion).OriginalValue=v;public Task SaveAsync(CancellationToken ct)=>SaveChangesAsync(ct);
- public async Task<BorrowerPage> SearchAsync(BorrowerSearch s,CancellationToken ct){var q=Borrowers.AsNoTracking();if(!string.IsNullOrWhiteSpace(s.CivilNumber))q=q.Where(x=>x.CivilNumber.Contains(s.CivilNumber.Trim()));if(!string.IsNullOrWhiteSpace(s.EmployeeNumber))q=q.Where(x=>x.EmployeeNumber!=null&&x.EmployeeNumber.Contains(s.EmployeeNumber.Trim()));if(!string.IsNullOrWhiteSpace(s.Name))q=q.Where(x=>x.FullName.Contains(s.Name.Trim()));if(!string.IsNullOrWhiteSpace(s.Organization))q=q.Where(x=>x.Organization.Contains(s.Organization.Trim()));if(s.Status.HasValue)q=q.Where(x=>x.Status==s.Status);var count=await q.CountAsync(ct);var rows=await q.OrderBy(x=>x.FullName).Skip((s.PageNumber-1)*s.PageSize).Take(s.PageSize).ToListAsync(ct);return new(rows.Select(BorrowerService.Map).ToList(),s.PageNumber,s.PageSize,count);}
+    public DbSet<Borrower> Borrowers => Set<Borrower>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        var borrower = modelBuilder.Entity<Borrower>();
+        borrower.ToTable("borrowers", "borrowers");
+        borrower.HasKey(x => x.Id);
+        borrower.Property(x => x.CivilNumber).HasMaxLength(100).IsRequired();
+        borrower.HasIndex(x => x.CivilNumber).IsUnique();
+        borrower.Property(x => x.EmployeeNumber).HasMaxLength(100);
+        borrower.HasIndex(x => x.EmployeeNumber).IsUnique().HasFilter("[EmployeeNumber] IS NOT NULL");
+        borrower.Property(x => x.FullName).HasMaxLength(200).IsRequired();
+        borrower.HasIndex(x => x.FullName);
+        borrower.Property(x => x.PhoneNumber).HasMaxLength(50);
+        borrower.Property(x => x.Nationality).HasMaxLength(100).IsRequired();
+        borrower.Property(x => x.Organization).HasMaxLength(200).IsRequired();
+        borrower.HasIndex(x => x.Organization);
+        borrower.Property(x => x.RankGrade).HasMaxLength(100);
+        borrower.Property(x => x.EmploymentInformation).HasMaxLength(1000);
+        borrower.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+        borrower.HasIndex(x => x.Status);
+        borrower.Property(x => x.RowVersion).IsRowVersion();
+    }
+
+    public Task<bool> CivilExistsAsync(string value, Guid? except, CancellationToken ct) =>
+        Borrowers.AnyAsync(x => x.CivilNumber == value && (!except.HasValue || x.Id != except), ct);
+
+    public Task<bool> EmployeeExistsAsync(string value, Guid? except, CancellationToken ct) =>
+        Borrowers.AnyAsync(x => x.EmployeeNumber == value && (!except.HasValue || x.Id != except), ct);
+
+    public Task AddAsync(Borrower borrower, CancellationToken ct) => Borrowers.AddAsync(borrower, ct).AsTask();
+
+    public Task<Borrower?> FindAsync(Guid id, CancellationToken ct) => Borrowers.SingleOrDefaultAsync(x => x.Id == id, ct);
+
+    public void ExpectVersion(Borrower borrower, byte[] version) => Entry(borrower).Property(x => x.RowVersion).OriginalValue = version;
+
+    public Task SaveAsync(CancellationToken ct) => SaveChangesAsync(ct);
+
+    public async Task<BorrowerPage> SearchAsync(BorrowerSearch search, CancellationToken ct)
+    {
+        var query = Borrowers.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search.CivilNumber))
+            query = query.Where(x => x.CivilNumber.Contains(search.CivilNumber.Trim()));
+        if (!string.IsNullOrWhiteSpace(search.EmployeeNumber))
+            query = query.Where(x => x.EmployeeNumber != null && x.EmployeeNumber.Contains(search.EmployeeNumber.Trim()));
+        if (!string.IsNullOrWhiteSpace(search.Name))
+            query = query.Where(x => x.FullName.Contains(search.Name.Trim()));
+        if (!string.IsNullOrWhiteSpace(search.Organization))
+            query = query.Where(x => x.Organization.Contains(search.Organization.Trim()));
+        if (search.Status.HasValue)
+            query = query.Where(x => x.Status == search.Status);
+
+        var count = await query.CountAsync(ct);
+        var rows = await query.OrderBy(x => x.FullName)
+            .Skip((search.PageNumber - 1) * search.PageSize)
+            .Take(search.PageSize)
+            .ToListAsync(ct);
+        return new(rows.Select(BorrowerService.Map).ToList(), search.PageNumber, search.PageSize, count);
+    }
 }
