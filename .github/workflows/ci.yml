@@ -42,10 +42,15 @@ jobs:
       - if: always()
         name: Capture Docker health diagnostics
         run: |
-          API_CONTAINER="$(docker compose ps -q api)"
-          if [ -n "$API_CONTAINER" ]; then
-            docker inspect "$API_CONTAINER" --format '{{json .State.Health}}' || true
-          fi
+          for SERVICE in sqlserver api web; do
+            CONTAINER="$(docker compose ps -q "$SERVICE")"
+            echo "===== $SERVICE health ====="
+            if [ -n "$CONTAINER" ]; then
+              docker inspect "$CONTAINER" --format '{{json .State.Health}}' || true
+            else
+              echo "No container found for $SERVICE"
+            fi
+          done
           docker compose ps || true
           docker compose logs || true
       - if: always()
