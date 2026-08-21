@@ -22,6 +22,7 @@ internal sealed class IdentityAccessDbContext(DbContextOptions<IdentityAccessDbC
     public async Task<IReadOnlyList<User>> ListAsync(CancellationToken ct) => await Users.AsNoTracking().Include(x => x.UserRoles).OrderBy(x => x.Username).ToListAsync(ct);
     public async Task<IReadOnlyList<Role>> RolesAsync(CancellationToken ct) => await Roles.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);
     public Task AddAsync(User user, CancellationToken ct) { Users.Add(user); return Task.CompletedTask; }
+    public async Task<bool> AreRolesValidAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) => await Roles.CountAsync(x => ids.Contains(x.Id), ct) == ids.Distinct().Count();
     public async Task ReplaceRolesAsync(User user, IReadOnlyCollection<Guid> ids, CancellationToken ct) { var valid = await Roles.Where(x => ids.Contains(x.Id)).Select(x => x.Id).ToListAsync(ct); if (valid.Count != ids.Distinct().Count()) throw new ArgumentException("Unknown role."); Set<UserRole>().RemoveRange(user.UserRoles); foreach (var id in valid) user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = id }); }
     public async Task EnsureAdministratorContinuityAsync(User user, bool remainsActive, IReadOnlyCollection<Guid> roleIds, CancellationToken ct)
     {

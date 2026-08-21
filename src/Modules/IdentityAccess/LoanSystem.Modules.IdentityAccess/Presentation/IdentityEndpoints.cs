@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Routing;
 namespace LoanSystem.Modules.IdentityAccess.Presentation;
 
 internal sealed record LoginRequest(string? Username, string? Password);
-internal sealed record CreateUserRequest(string? Username, string? DisplayName, string? Password);
+internal sealed record CreateUserRequest(string? Username, string? DisplayName, string? Password, IReadOnlyList<Guid>? RoleIds);
 internal sealed record UpdateUserRequest(string? DisplayName);
 internal sealed record AssignRolesRequest(IReadOnlyList<Guid>? RoleIds);
 
@@ -40,7 +40,7 @@ internal static class IdentityEndpoints
     }
     private static async Task<IResult> List(IIdentityStore store, CancellationToken ct) => Results.Ok((await store.ListAsync(ct)).Select(UserAdministration.Map));
     private static async Task<IResult> Get(Guid id, IIdentityStore store, CancellationToken ct) { var u = await store.FindAsync(id, ct); return u is null ? Results.NotFound() : WithEtag(UserAdministration.Map(u)); }
-    private static async Task<IResult> Create(CreateUserRequest r, UserAdministration app, CancellationToken ct) { var result = await app.CreateAsync(new(r.Username, r.DisplayName, r.Password), ct); return result.User is null ? Problem(result.Error == "identity.usernameConflict" ? 409 : 400, "Unable to create user", result.Error!) : Results.Created($"/api/v1/users/{result.User.UserId}", result.User); }
+    private static async Task<IResult> Create(CreateUserRequest r, UserAdministration app, CancellationToken ct) { var result = await app.CreateAsync(new(r.Username, r.DisplayName, r.Password, r.RoleIds), ct); return result.User is null ? Problem(result.Error == "identity.usernameConflict" ? 409 : 400, "Unable to create user", result.Error!) : Results.Created($"/api/v1/users/{result.User.UserId}", result.User); }
     private static async Task<IResult> Update(Guid id, UpdateUserRequest r, HttpRequest request, UserAdministration app, CancellationToken ct) { if (!TryVersion(request, out var version)) return Precondition(); try { var u = await app.UpdateAsync(id, r.DisplayName, version, ct); return u is null ? Results.NotFound() : WithEtag(u); } catch (ArgumentException) { return Problem(400, "Invalid user", "identity.validation"); } catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException) { return Precondition(); } }
     private static async Task<IResult> Active(Guid id, bool active, HttpRequest request, UserAdministration app, CancellationToken ct) { if (!TryVersion(request, out var version)) return Precondition(); try { var u = await app.SetActiveAsync(id, active, version, ct); return u is null ? Results.NotFound() : WithEtag(u); } catch (LastAdministratorRequiredException) { return LastAdministrator(); } catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException) { return Precondition(); } }
     private static async Task<IResult> Roles(Guid id, AssignRolesRequest r, HttpRequest request, UserAdministration app, CancellationToken ct) { if (!TryVersion(request, out var version)) return Precondition(); try { var u = await app.AssignRolesAsync(id, r.RoleIds, version, ct); return u is null ? Results.NotFound() : WithEtag(u); } catch (LastAdministratorRequiredException) { return LastAdministrator(); } catch (ArgumentException ex) { return Problem(400, ex.Message == "Roles are required." ? "Roles are required" : "Unknown role", ex.Message == "Roles are required." ? "identity.validation" : "identity.unknownRole"); } catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException) { return Precondition(); } }

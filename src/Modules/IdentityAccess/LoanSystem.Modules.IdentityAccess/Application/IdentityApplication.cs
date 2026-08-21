@@ -10,13 +10,13 @@ public interface IIdentityStore
 {
     Task<User?> FindAsync(Guid id, CancellationToken ct); Task<User?> FindByUsernameAsync(string normalized, CancellationToken ct);
     Task<IReadOnlyList<User>> ListAsync(CancellationToken ct); Task<IReadOnlyList<Role>> RolesAsync(CancellationToken ct);
-    Task AddAsync(User user, CancellationToken ct); Task ReplaceRolesAsync(User user, IReadOnlyCollection<Guid> roleIds, CancellationToken ct); Task EnsureAdministratorContinuityAsync(User user, bool remainsActive, IReadOnlyCollection<Guid> roleIds, CancellationToken ct); void SetExpectedVersion(User user, byte[] version); Task SaveAsync(CancellationToken ct);
+    Task AddAsync(User user, CancellationToken ct); Task<bool> AreRolesValidAsync(IReadOnlyCollection<Guid> roleIds, CancellationToken ct); Task ReplaceRolesAsync(User user, IReadOnlyCollection<Guid> roleIds, CancellationToken ct); Task EnsureAdministratorContinuityAsync(User user, bool remainsActive, IReadOnlyCollection<Guid> roleIds, CancellationToken ct); void SetExpectedVersion(User user, byte[] version); Task SaveAsync(CancellationToken ct);
 }
 public interface IPasswordService { string Hash(User user, string password); }
 public sealed record UserDto(Guid UserId, string Username, string DisplayName, bool IsActive, IReadOnlyList<Guid> RoleIds, string ETag);
 public sealed record RoleDto(Guid RoleId, string Name);
 public sealed record CurrentUserDto(Guid UserId, string Username, string DisplayName, IReadOnlyList<string> Roles, IReadOnlyList<string> Permissions);
-public sealed record CreateUserCommand(string? Username, string? DisplayName, string? Password);
+public sealed record CreateUserCommand(string? Username, string? DisplayName, string? Password, IReadOnlyCollection<Guid>? RoleIds = null);
 public interface IAccessProfileReader { Task<CurrentUserDto?> GetAsync(Guid userId, CancellationToken cancellationToken); }
 public sealed class LastAdministratorRequiredException : Exception { public LastAdministratorRequiredException() : base("At least one active user with user-management permission is required.") { } }
 
@@ -28,8 +28,9 @@ public sealed class UserAdministration
     {
         if (string.IsNullOrWhiteSpace(command.Username) || string.IsNullOrWhiteSpace(command.DisplayName) || string.IsNullOrEmpty(command.Password) || command.Password.Length < 12) return (null, "identity.validation");
         if (await store.FindByUsernameAsync(User.Normalize(command.Username), ct) is not null) return (null, "identity.usernameConflict");
+        var roleIds = command.RoleIds ?? []; if (!await store.AreRolesValidAsync(roleIds, ct)) return (null, "identity.unknownRole");
         var user = new User(Guid.NewGuid(), command.Username, command.DisplayName, "pending", DateTimeOffset.UtcNow);
-        user.SetPasswordHash(passwords.Hash(user, command.Password)); await store.AddAsync(user, ct); await store.SaveAsync(ct); return (Map(user), null);
+        user.SetPasswordHash(passwords.Hash(user, command.Password)); foreach (var roleId in roleIds.Distinct()) user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = roleId }); await store.AddAsync(user, ct); await store.SaveAsync(ct); return (Map(user), null);
     }
     public async Task<UserDto?> SetActiveAsync(Guid id, bool active, byte[] version, CancellationToken ct) { var u = await store.FindAsync(id, ct); if (u is null) return null; if (!active) await store.EnsureAdministratorContinuityAsync(u, false, u.UserRoles.Select(x => x.RoleId).ToArray(), ct); store.SetExpectedVersion(u, version); u.SetActive(active, DateTimeOffset.UtcNow); await store.SaveAsync(ct); return Map(u); }
     public async Task<UserDto?> UpdateAsync(Guid id, string? displayName, byte[] version, CancellationToken ct) { if (string.IsNullOrWhiteSpace(displayName)) throw new ArgumentException("Display name is required."); var u = await store.FindAsync(id, ct); if (u is null) return null; store.SetExpectedVersion(u, version); u.Update(displayName, DateTimeOffset.UtcNow); await store.SaveAsync(ct); return Map(u); }
