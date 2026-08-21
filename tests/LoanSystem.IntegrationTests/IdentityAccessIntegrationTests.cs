@@ -79,7 +79,7 @@ public sealed class IdentityAccessIntegrationTests(IdentitySqlFixture fixture)
         await using var connection = new SqlConnection(fixture.ConnectionString); await connection.OpenAsync();
         foreach (var table in new[] { "users", "roles", "permissions", "user_roles", "role_permissions" }) { using var command = new SqlCommand("SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id WHERE s.name='identity' AND t.name=@name", connection); command.Parameters.AddWithValue("@name", table); Assert.Equal(1, Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)); }
         using var scope = fixture.Factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<IdentityAccessDbContext>(); var platform = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        Assert.Equal(fixture.ConnectionString, db.Database.GetConnectionString()); Assert.Equal(fixture.ConnectionString, platform.Database.GetConnectionString());
+        AssertUsesExpectedSqlServer(fixture.ConnectionString, db.Database.GetConnectionString()); AssertUsesExpectedSqlServer(fixture.ConnectionString, platform.Database.GetConnectionString());
         Assert.Equal(11, await db.Roles.CountAsync()); Assert.Equal(40, await db.Permissions.CountAsync());
         var unit = await db.Roles.Include(x => x.RolePermissions).ThenInclude(x => x.Permission).SingleAsync(x => x.Name == "Unit Officer"); Assert.Contains(unit.RolePermissions, x => x.Permission.Key == "loanApplications.unitApprove"); Assert.DoesNotContain(unit.RolePermissions, x => x.Permission.Key == "identity.users.manage");
         var treasury = await db.Roles.Include(x => x.RolePermissions).ThenInclude(x => x.Permission).SingleAsync(x => x.Name == "Treasury Approver"); Assert.Contains(treasury.RolePermissions, x => x.Permission.Key == "treasury.execute"); Assert.DoesNotContain(treasury.RolePermissions, x => x.Permission.Key == "treasury.input");
@@ -116,4 +116,14 @@ public sealed class IdentityAccessIntegrationTests(IdentitySqlFixture fixture)
     }
     private static async Task Login(HttpClient client, string username = Admin, string password = Password) => Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/login", new { username, password })).StatusCode);
     private static async Task<HttpResponseMessage> Send(HttpClient client, HttpMethod method, string path, string etag, object body) { using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(body) }; request.Headers.TryAddWithoutValidation("If-Match", $"\"{etag}\""); return await client.SendAsync(request); }
+    private static void AssertUsesExpectedSqlServer(string expectedConnectionString, string? actualConnectionString)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(actualConnectionString));
+        var expected = new SqlConnectionStringBuilder(expectedConnectionString);
+        var actual = new SqlConnectionStringBuilder(actualConnectionString);
+        Assert.Equal(expected.DataSource, actual.DataSource);
+        Assert.Equal(expected.InitialCatalog, actual.InitialCatalog);
+        Assert.Equal(expected.UserID, actual.UserID);
+        Assert.Equal(expected.IntegratedSecurity, actual.IntegratedSecurity);
+    }
 }
