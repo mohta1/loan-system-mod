@@ -1,0 +1,1 @@
+import{expect,test}from'@playwright/test';test('browser reaches React and proxied API',async({page})=>{await page.goto('/');await expect(page.getByRole('heading',{name:'Loan System'})).toBeVisible();const response=await page.request.get('/api/v1/system/info');expect(response.ok()).toBeTruthy();expect((await response.json()).status).toBe('Operational')});

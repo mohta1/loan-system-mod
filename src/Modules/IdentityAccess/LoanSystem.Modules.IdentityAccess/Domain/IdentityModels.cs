@@ -23,6 +23,7 @@ public sealed class User
     public ICollection<UserRole> UserRoles { get; } = [];
     public void Update(string displayName, DateTimeOffset now) { if (string.IsNullOrWhiteSpace(displayName)) throw new ArgumentException("Display name is required."); DisplayName = displayName.Trim(); UpdatedAtUtc = now; }
     public void SetActive(bool active, DateTimeOffset now) { IsActive = active; UpdatedAtUtc = now; }
+    public void Touch(DateTimeOffset now) => UpdatedAtUtc = now;
     public void SetPasswordHash(string hash) => PasswordHash = hash;
     public static string Normalize(string username) => username.Trim().ToUpperInvariant();
 }

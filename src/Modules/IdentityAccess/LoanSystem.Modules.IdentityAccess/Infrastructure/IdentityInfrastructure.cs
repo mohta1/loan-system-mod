@@ -20,6 +20,7 @@ internal sealed class IdentityAccessDbContext(DbContextOptions<IdentityAccessDbC
     public async Task<IReadOnlyList<Role>> RolesAsync(CancellationToken ct) => await Roles.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);
     public Task AddAsync(User user, CancellationToken ct) { Users.Add(user); return Task.CompletedTask; }
     public async Task ReplaceRolesAsync(User user, IReadOnlyCollection<Guid> ids, CancellationToken ct) { var valid = await Roles.Where(x => ids.Contains(x.Id)).Select(x => x.Id).ToListAsync(ct); if (valid.Count != ids.Distinct().Count()) throw new ArgumentException("Unknown role."); Set<UserRole>().RemoveRange(user.UserRoles); foreach (var id in valid) user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = id }); }
+    public void SetExpectedVersion(User user, byte[] version) => Entry(user).Property(x => x.RowVersion).OriginalValue = version;
     public Task SaveAsync(CancellationToken ct) => SaveChangesAsync(ct);
 }
 internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
@@ -34,22 +35,53 @@ internal sealed class RolePermissionConfiguration : IEntityTypeConfiguration<Rol
 internal sealed class PasswordService : IPasswordService { private readonly PasswordHasher<User> hasher = new(); public string Hash(User user, string password) => hasher.HashPassword(user, password); public PasswordVerificationResult Verify(User user, string password) => hasher.VerifyHashedPassword(user, user.PasswordHash, password); }
 internal sealed class LocalIdentityProvider(IdentityAccessDbContext db, PasswordService passwords) : IIdentityProvider
 {
-    public async Task<User?> ValidateAsync(string username, string password, CancellationToken ct) { var user = await db.Users.SingleOrDefaultAsync(x => x.NormalizedUsername == User.Normalize(username), ct); return user is { IsActive: true } && passwords.Verify(user, password) != PasswordVerificationResult.Failed ? user : null; }
+    public async Task<User?> ValidateAsync(string? username, string? password, CancellationToken ct) { if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password)) return null; var user = await db.Users.SingleOrDefaultAsync(x => x.NormalizedUsername == User.Normalize(username), ct); return user is { IsActive: true } && passwords.Verify(user, password) != PasswordVerificationResult.Failed ? user : null; }
 }
 internal sealed class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser { public Guid? UserId => Guid.TryParse(accessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null; public bool IsAuthenticated => accessor.HttpContext?.User.Identity?.IsAuthenticated == true; }
 internal sealed class PermissionChecker(IdentityAccessDbContext db) : IPermissionChecker
 {
     public Task<bool> HasPermissionAsync(Guid id, string permission, CancellationToken ct = default) => db.Users.AsNoTracking().Where(x => x.Id == id && x.IsActive).SelectMany(x => x.UserRoles).SelectMany(x => x.Role.RolePermissions).AnyAsync(x => x.Permission.Key == permission, ct);
 }
+internal sealed class AccessProfileReader(IdentityAccessDbContext db) : IAccessProfileReader
+{
+    public async Task<CurrentUserDto?> GetAsync(Guid id, CancellationToken ct)
+    {
+        var user = await db.Users.AsNoTracking().Where(x => x.Id == id && x.IsActive).Select(x => new { x.Id, x.Username, x.DisplayName }).SingleOrDefaultAsync(ct);
+        if (user is null) return null;
+        var roles = await db.Set<UserRole>().AsNoTracking().Where(x => x.UserId == id).Select(x => x.Role.Name).OrderBy(x => x).ToListAsync(ct);
+        var permissions = await db.Set<UserRole>().AsNoTracking().Where(x => x.UserId == id).SelectMany(x => x.Role.RolePermissions).Select(x => x.Permission.Key).Distinct().OrderBy(x => x).ToListAsync(ct);
+        return new(user.Id, user.Username, user.DisplayName, roles, permissions);
+    }
+}
 
 internal static class IdentitySeed
 {
     internal static readonly string[] PermissionKeys = ["identity.users.manage", "borrowers.read", "borrowers.create", "borrowers.update", "borrowers.manageStatus", "borrowers.import", "loanProducts.read", "loanProducts.manage", "loanProducts.publish", "loanProducts.manageStatus", "loanApplications.read", "loanApplications.create", "loanApplications.update", "loanApplications.evaluateEligibility", "loanApplications.submit", "loanApplications.unitApprove", "loanApplications.committeeApprove", "loanApplications.mortgageManage", "loanApplications.finalApprove", "loanApplications.cancel", "inspections.create", "inspections.approve", "loans.read", "loans.close", "disbursements.read", "disbursements.create", "disbursements.technicalApprove", "disbursements.accountingApprove", "disbursements.finalApprove", "disbursements.cancel", "treasury.read", "treasury.input", "treasury.audit", "treasury.approve", "treasury.execute", "repayments.read", "repayments.create", "repayments.import", "audit.read", "reports.read"];
     internal static readonly string[] Roles = ["System Administrator", "Loan Management Officer", "Unit Officer", "Loan Committee Member", "Property Inspector / Technical Affairs Officer", "Accounting Officer", "Higher Administrative Approver", "Treasury Input User", "Treasury Auditor", "Treasury Approver", "Reporting / Audit Viewer"];
+    internal static readonly IReadOnlyDictionary<string, string[]> RolePermissions = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        ["System Administrator"] = PermissionKeys,
+        ["Loan Management Officer"] = ["borrowers.read", "borrowers.create", "borrowers.update", "borrowers.manageStatus", "borrowers.import", "loanProducts.read", "loanProducts.manage", "loanProducts.publish", "loanProducts.manageStatus", "loanApplications.read", "loanApplications.create", "loanApplications.update", "loanApplications.evaluateEligibility", "loanApplications.submit", "loanApplications.mortgageManage", "loanApplications.cancel", "loans.read", "loans.close", "disbursements.read", "disbursements.create", "disbursements.cancel", "repayments.read", "repayments.create", "repayments.import", "reports.read"],
+        ["Unit Officer"] = ["borrowers.read", "loanProducts.read", "loanApplications.read", "loanApplications.unitApprove", "loans.read", "reports.read"],
+        ["Loan Committee Member"] = ["borrowers.read", "loanProducts.read", "loanApplications.read", "loanApplications.committeeApprove", "loans.read", "reports.read"],
+        ["Property Inspector / Technical Affairs Officer"] = ["borrowers.read", "loanProducts.read", "loanApplications.read", "loanApplications.mortgageManage", "inspections.create", "inspections.approve", "loans.read", "disbursements.read", "disbursements.create", "disbursements.technicalApprove", "disbursements.cancel", "reports.read"],
+        ["Accounting Officer"] = ["borrowers.read", "loanProducts.read", "loanApplications.read", "loans.read", "loans.close", "disbursements.read", "disbursements.accountingApprove", "disbursements.cancel", "treasury.read", "repayments.read", "repayments.create", "repayments.import", "reports.read"],
+        ["Higher Administrative Approver"] = ["borrowers.read", "loanProducts.read", "loanApplications.read", "loanApplications.finalApprove", "loans.read", "loans.close", "disbursements.read", "disbursements.finalApprove", "disbursements.cancel", "treasury.read", "repayments.read", "audit.read", "reports.read"],
+        ["Treasury Input User"] = ["loans.read", "disbursements.read", "treasury.read", "treasury.input", "repayments.read", "reports.read"],
+        ["Treasury Auditor"] = ["loans.read", "disbursements.read", "treasury.read", "treasury.audit", "repayments.read", "audit.read", "reports.read"],
+        ["Treasury Approver"] = ["loans.read", "disbursements.read", "treasury.read", "treasury.approve", "treasury.execute", "repayments.read", "audit.read", "reports.read"],
+        ["Reporting / Audit Viewer"] = ["borrowers.read", "loanProducts.read", "loanApplications.read", "loans.read", "disbursements.read", "treasury.read", "repayments.read", "audit.read", "reports.read"]
+    };
     public static async Task InitializeAsync(IServiceProvider services, IConfiguration config, bool migrate, CancellationToken ct = default)
     {
         using var scope = services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<IdentityAccessDbContext>(); if (migrate) await db.Database.MigrateAsync(ct);
-        if (!await db.Permissions.AnyAsync(ct)) { db.Permissions.AddRange(PermissionKeys.Select((x, i) => new Permission { Id = Stable("permission:" + i), Key = x })); db.Roles.AddRange(Roles.Select((x, i) => new Role { Id = Stable("role:" + i), Name = x })); await db.SaveChangesAsync(ct); var admin = await db.Roles.SingleAsync(x => x.Name == Roles[0], ct); db.Set<RolePermission>().AddRange(await db.Permissions.Select(x => new RolePermission { RoleId = admin.Id, PermissionId = x.Id }).ToListAsync(ct)); await db.SaveChangesAsync(ct); }
+        foreach (var key in PermissionKeys) if (!await db.Permissions.AnyAsync(x => x.Key == key, ct)) db.Permissions.Add(new Permission { Id = Stable("permission:" + key), Key = key });
+        foreach (var name in Roles) if (!await db.Roles.AnyAsync(x => x.Name == name, ct)) db.Roles.Add(new Role { Id = Stable("role:" + name), Name = name });
+        await db.SaveChangesAsync(ct);
+        var roleIds = await db.Roles.Where(x => Roles.Contains(x.Name)).ToDictionaryAsync(x => x.Name, x => x.Id, ct); var permissionIds = await db.Permissions.Where(x => PermissionKeys.Contains(x.Key)).ToDictionaryAsync(x => x.Key, x => x.Id, ct);
+        var desired = RolePermissions.SelectMany(pair => pair.Value.Select(key => new { RoleId = roleIds[pair.Key], PermissionId = permissionIds[key] })).ToArray(); var existing = await db.Set<RolePermission>().ToListAsync(ct);
+        db.RemoveRange(existing.Where(x => roleIds.ContainsValue(x.RoleId) && !desired.Any(d => d.RoleId == x.RoleId && d.PermissionId == x.PermissionId)));
+        db.AddRange(desired.Where(d => !existing.Any(x => x.RoleId == d.RoleId && x.PermissionId == d.PermissionId)).Select(d => new RolePermission { RoleId = d.RoleId, PermissionId = d.PermissionId })); await db.SaveChangesAsync(ct);
         var username = config["DevelopmentAdmin:Username"]; var password = config["DevelopmentAdmin:Password"]; if (!string.IsNullOrWhiteSpace(username) && !string.IsNullOrWhiteSpace(password) && await db.Users.AllAsync(x => x.NormalizedUsername != User.Normalize(username), ct)) { var p = scope.ServiceProvider.GetRequiredService<IPasswordService>(); var user = new User(Guid.NewGuid(), username, config["DevelopmentAdmin:DisplayName"] ?? "Development Administrator", "pending", DateTimeOffset.UtcNow); user.SetPasswordHash(p.Hash(user, password)); var adminRole = await db.Roles.SingleAsync(x => x.Name == Roles[0], ct); user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = adminRole.Id }); db.Users.Add(user); await db.SaveChangesAsync(ct); }
     }
     private static Guid Stable(string value) { var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)); return new Guid(bytes[..16]); }
