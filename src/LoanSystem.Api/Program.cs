@@ -1,3 +1,14 @@
+using LoanSystem.Modules.IdentityAccess;
+using LoanSystem.Modules.Borrowers;
+using LoanSystem.Modules.LoanProducts;
+using LoanSystem.Modules.LoanOrigination;
+using LoanSystem.Modules.LoanAccounts;
+using LoanSystem.Modules.Disbursements;
+using LoanSystem.Modules.Treasury;
+using LoanSystem.Modules.Repayments;
+using LoanSystem.Modules.Documents;
+using LoanSystem.Modules.Audit;
+using LoanSystem.Modules.Reporting;
 using LoanSystem.Api.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -5,6 +16,18 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services
+    .AddIdentityAccessModule(builder.Configuration)
+    .AddBorrowersModule(builder.Configuration)
+    .AddLoanProductsModule(builder.Configuration)
+    .AddLoanOriginationModule(builder.Configuration)
+    .AddLoanAccountsModule(builder.Configuration)
+    .AddDisbursementsModule(builder.Configuration)
+    .AddTreasuryModule(builder.Configuration)
+    .AddRepaymentsModule(builder.Configuration)
+    .AddDocumentsModule(builder.Configuration)
+    .AddAuditModule(builder.Configuration)
+    .AddReportingModule(builder.Configuration);
 builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
     context.ProblemDetails.Extensions["correlationId"] = context.HttpContext.TraceIdentifier);
 builder.Services.AddEndpointsApiExplorer();
@@ -31,6 +54,18 @@ app.Use(async (context, next) =>
 });
 app.UseSwagger();
 app.UseSwaggerUI();
+app
+    .MapIdentityAccessModuleEndpoints()
+    .MapBorrowersModuleEndpoints()
+    .MapLoanProductsModuleEndpoints()
+    .MapLoanOriginationModuleEndpoints()
+    .MapLoanAccountsModuleEndpoints()
+    .MapDisbursementsModuleEndpoints()
+    .MapTreasuryModuleEndpoints()
+    .MapRepaymentsModuleEndpoints()
+    .MapDocumentsModuleEndpoints()
+    .MapAuditModuleEndpoints()
+    .MapReportingModuleEndpoints();
 app.MapHealthChecks("/health/live", new() { Predicate = check => check.Tags.Contains("live") });
 app.MapHealthChecks("/health/ready", new() { Predicate = check => check.Tags.Contains("ready") });
 app.MapGet("/api/v1/system/info", () => Results.Ok(new SystemInfoResponse("Loan System", "1.0.0", "Operational", DateTimeOffset.UtcNow)))

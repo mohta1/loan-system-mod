@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 namespace LoanSystem.Api.Infrastructure;
+
 public sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : DbContext(options)
 {
     public DbSet<PlatformMarker> PlatformMarkers => Set<PlatformMarker>();

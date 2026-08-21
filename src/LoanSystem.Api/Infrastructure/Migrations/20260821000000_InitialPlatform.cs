@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 #nullable disable
 namespace LoanSystem.Api.Infrastructure.Migrations;
+
 [DbContext(typeof(PlatformDbContext))]
 [Migration("20260821000000_InitialPlatform")]
 public partial class InitialPlatform : Migration

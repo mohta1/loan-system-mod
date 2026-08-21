@@ -1,10 +1,10 @@
 # Loan System
 
-TASK-00 establishes the runnable modular-monolith baseline: ASP.NET Core 8 REST API, EF Core/SQL Server, React/TypeScript/Vite SPA, automated boundary and runtime tests, and Compose deployment.
+TASK-00 establishes the runnable modular-monolith baseline: ASP.NET Core 10 REST API, EF Core/SQL Server, React/TypeScript/Vite SPA, automated boundary and runtime tests, and Compose deployment.
 
 ## Prerequisites
 
-- .NET SDK 8
+- .NET SDK 10
 - Node.js 20 and npm
 - Docker Engine with Compose v2
 
@@ -32,16 +32,19 @@ npm run dev --prefix frontend/loan-system-web
 ```bash
 dotnet restore
 dotnet build --no-restore
-dotnet test --no-build --collect:"XPlat Code Coverage"
+dotnet test --no-build --collect:"XPlat Code Coverage" --results-directory TestResults
+python3 scripts/check_backend_coverage.py "TestResults/**/coverage.cobertura.xml"
 dotnet format --verify-no-changes
 npm ci --prefix frontend/loan-system-web
 npm run typecheck --prefix frontend/loan-system-web
 npm run lint --prefix frontend/loan-system-web
 npm run test:coverage --prefix frontend/loan-system-web
 npm run build --prefix frontend/loan-system-web
+# With the runtime running:
+npm run e2e --prefix frontend/loan-system-web
 ```
 
-Integration tests start disposable Microsoft SQL Server through Testcontainers when `CI` is set. The `LoanSystem.ArchitectureTests` project enforces module implementation and Clean Architecture boundaries.
+Integration tests start disposable Microsoft SQL Server through Testcontainers whenever Docker is available; GitHub CI always executes this real-database path. The `LoanSystem.ArchitectureTests` project enforces module implementation and Clean Architecture boundaries.
 
 ## Required main branch ruleset
 
