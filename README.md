@@ -1,6 +1,6 @@
 # Loan System
 
-TASK-00 establishes the runnable modular-monolith baseline: ASP.NET Core 10 REST API, EF Core/SQL Server, React/TypeScript/Vite SPA, automated boundary and runtime tests, and Compose deployment.
+The repository contains the runnable modular-monolith baseline and local IdentityAccess slice: ASP.NET Core 10, EF Core/SQL Server, cookie authentication, permission authorization, and a React/TypeScript/Vite SPA.
 
 ## Prerequisites
 
@@ -11,12 +11,16 @@ TASK-00 establishes the runnable modular-monolith baseline: ASP.NET Core 10 REST
 ## Full runtime
 
 ```bash
-cp .env.example .env # replace the example development password
+cp .env.example .env
+# Edit .env: choose a strong MSSQL password and disposable
+# DevelopmentAdmin__Username / DevelopmentAdmin__Password values.
 docker compose up --build -d
 docker compose ps
 ```
 
 Open the frontend at <http://localhost:5173>, API at <http://localhost:8080/api/v1/system/info>, OpenAPI at <http://localhost:8080/swagger>, liveness at <http://localhost:8080/health/live>, and SQL-backed readiness at <http://localhost:8080/health/ready>. Stop without deleting persistent data using `docker compose down`.
+
+The development administrator is created only when both `DevelopmentAdmin__Username` and `DevelopmentAdmin__Password` are supplied. Seeding is idempotent, the password is hashed before storage, and no default application credential is used. Never commit the populated `.env` file. Login at <http://localhost:5173/>; user administration is available to accounts with `identity.users.manage`.
 
 ## Development
 

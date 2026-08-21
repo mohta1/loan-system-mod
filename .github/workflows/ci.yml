@@ -31,6 +31,11 @@ jobs:
       - run: npm run build
   docker-smoke:
     runs-on: ubuntu-latest
+    env:
+      DevelopmentAdmin__Username: ci-admin
+      DevelopmentAdmin__Password: CI_disposable_identity_password_123!
+      E2E_ADMIN_USERNAME: ci-admin
+      E2E_ADMIN_PASSWORD: CI_disposable_identity_password_123!
     steps:
       - uses: actions/checkout@v4
       - run: docker compose up --build -d --wait

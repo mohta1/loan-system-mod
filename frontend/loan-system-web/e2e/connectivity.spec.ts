@@ -1,1 +1,0 @@
-import{test,expect}from'@playwright/test';test('browser reaches React and API',async({page})=>{await page.goto('/');await expect(page.getByText('Operational',{exact:true})).toBeVisible();await page.reload();await expect(page.getByRole('heading',{name:'Loan System'})).toBeVisible()});
