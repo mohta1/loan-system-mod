@@ -44,6 +44,8 @@ if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().Database.MigrateAsync();
 }
+if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
+    await app.Services.InitializeIdentityAccessAsync(app.Configuration, migrate: true);
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
@@ -54,6 +56,8 @@ app.Use(async (context, next) =>
 });
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseAuthentication();
+app.UseAuthorization();
 app
     .MapIdentityAccessModuleEndpoints()
     .MapBorrowersModuleEndpoints()

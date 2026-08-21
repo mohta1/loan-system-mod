@@ -53,6 +53,7 @@ public sealed class ArchitectureRulesTests
             var definitions = ReadModule(module).MainModule.Types.SelectMany(Flatten).ToArray();
             AssertLayerDoesNotReference(definitions, ".Domain", [".Application", ".Infrastructure", ".Presentation"]);
             AssertLayerDoesNotReference(definitions, ".Application", [".Infrastructure", ".Presentation"]);
+            AssertLayerDoesNotReference(definitions, ".Presentation", [".Infrastructure"]);
         });
     }
 

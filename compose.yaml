@@ -23,6 +23,9 @@ services:
       FileStorage__RootPath: /app/data/files
       Authentication__Mode: Local
       PaymentGateway__Mode: Fake
+      DevelopmentAdmin__Username: "${DevelopmentAdmin__Username:-}"
+      DevelopmentAdmin__Password: "${DevelopmentAdmin__Password:-}"
+      DevelopmentAdmin__DisplayName: "${DevelopmentAdmin__DisplayName:-Development Administrator}"
     ports: ["8080:8080"]
     volumes: ["loan_files:/app/data/files"]
     depends_on: { sqlserver: { condition: service_healthy } }
