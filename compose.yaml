@@ -1,0 +1,35 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment: { ACCEPT_EULA: "Y", MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Local_only_password123}" }
+    ports: ["1433:1433"]
+    volumes: ["sql_data:/var/opt/mssql"]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa
+          -P "$${MSSQL_SA_PASSWORD}" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+  api:
+    build: { context: ., dockerfile: src/LoanSystem.Api/Dockerfile }
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      Database__AutoMigrate: "true"
+      ConnectionStrings__LoanSystem: "Server=sqlserver,1433;Database=LoanSystem;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Local_only_password123};TrustServerCertificate=True"
+      FileStorage__RootPath: /app/data/files
+      Authentication__Mode: Local
+      PaymentGateway__Mode: Fake
+    ports: ["8080:8080"]
+    volumes: ["loan_files:/app/data/files"]
+    depends_on: { sqlserver: { condition: service_healthy } }
+    healthcheck: { test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8080/health/ready"], interval: 10s, timeout: 5s, retries: 10 }
+  web:
+    build: { context: ., dockerfile: frontend/loan-system-web/Dockerfile }
+    ports: ["5173:80"]
+    depends_on: { api: { condition: service_healthy } }
+    healthcheck: { test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1/"], interval: 10s, timeout: 5s, retries: 5 }
+volumes: { sql_data: {}, loan_files: {} }

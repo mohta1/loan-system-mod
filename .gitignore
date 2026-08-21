@@ -209,3 +209,18 @@ $RECYCLE.BIN/
 # ----------------------------
 # frontend/**/src/api/generated/
 # openapi.generated.json
+
+# .NET
+**/bin/
+**/obj/
+TestResults/
+# Frontend
+**/node_modules/
+**/dist/
+**/coverage/
+**/playwright-report/
+.env
+
+# Python
+__pycache__/
+*.py[cod]

@@ -1,0 +1,2 @@
+import { defineConfig } from 'vitest/config'; import react from '@vitejs/plugin-react';
+export default defineConfig({plugins:[react()],server:{port:5173,proxy:{'/api':'http://localhost:8080'}},test:{include:['src/**/*.test.ts','src/**/*.test.tsx'],environment:'jsdom',setupFiles:'./src/test/setup.ts',coverage:{provider:'v8',reporter:['text','lcov'],thresholds:{lines:85,functions:85,statements:85,branches:80},exclude:['src/main.tsx','src/test/**','e2e/**','**/*.config.*','eslint.config.js','dist/**']}}});

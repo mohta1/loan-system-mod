@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="NetArchTest.Rules" Version="1.3.2" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Modules\IdentityAccess\LoanSystem.Modules.IdentityAccess\LoanSystem.Modules.IdentityAccess.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Borrowers\LoanSystem.Modules.Borrowers\LoanSystem.Modules.Borrowers.csproj" />
+    <ProjectReference Include="..\..\src\Modules\LoanProducts\LoanSystem.Modules.LoanProducts\LoanSystem.Modules.LoanProducts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\LoanOrigination\LoanSystem.Modules.LoanOrigination\LoanSystem.Modules.LoanOrigination.csproj" />
+    <ProjectReference Include="..\..\src\Modules\LoanAccounts\LoanSystem.Modules.LoanAccounts\LoanSystem.Modules.LoanAccounts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Disbursements\LoanSystem.Modules.Disbursements\LoanSystem.Modules.Disbursements.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Treasury\LoanSystem.Modules.Treasury\LoanSystem.Modules.Treasury.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Repayments\LoanSystem.Modules.Repayments\LoanSystem.Modules.Repayments.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Documents\LoanSystem.Modules.Documents\LoanSystem.Modules.Documents.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Audit\LoanSystem.Modules.Audit\LoanSystem.Modules.Audit.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Reporting\LoanSystem.Modules.Reporting\LoanSystem.Modules.Reporting.csproj" />
+  </ItemGroup>
+
+</Project>
