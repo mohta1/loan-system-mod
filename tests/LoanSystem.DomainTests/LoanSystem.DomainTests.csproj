@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\BuildingBlocks\LoanSystem.BuildingBlocks.Domain\LoanSystem.BuildingBlocks.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\IdentityAccess\LoanSystem.Modules.IdentityAccess\LoanSystem.Modules.IdentityAccess.csproj" />
     <ProjectReference Include="..\..\src\Modules\Documents\LoanSystem.Modules.Documents\LoanSystem.Modules.Documents.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Borrowers\LoanSystem.Modules.Borrowers\LoanSystem.Modules.Borrowers.csproj" />
   </ItemGroup>
 
 </Project>

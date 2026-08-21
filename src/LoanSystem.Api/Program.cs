@@ -48,6 +48,8 @@ if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
     await app.Services.InitializeIdentityAccessAsync(app.Configuration, migrate: true);
 if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
     await app.Services.InitializeDocumentsAsync();
+if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
+    await app.Services.InitializeBorrowersAsync();
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
