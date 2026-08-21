@@ -41,7 +41,7 @@ public sealed class IdentitySqlFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await Factory.DisposeAsync();
+        if (Factory is not null) await Factory.DisposeAsync();
         if (sql is not null) await sql.DisposeAsync();
     }
 }
@@ -56,6 +56,7 @@ public sealed class IdentityApiFactory(string connectionString, string username,
         builder.UseSetting("DevelopmentAdmin:Username", username);
         builder.UseSetting("DevelopmentAdmin:Password", password);
         builder.UseSetting("DevelopmentAdmin:DisplayName", "Integration Administrator");
+        builder.UseSetting("FileStorage:RootPath", Path.Combine(Path.GetTempPath(), "loan-doc-tests", Guid.NewGuid().ToString("N")));
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<PlatformDbContext>();

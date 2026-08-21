@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using LoanSystem.Modules.Documents.Application;
+using LoanSystem.Modules.Documents.Infrastructure;
+using LoanSystem.Modules.Documents.Presentation;
+using Microsoft.EntityFrameworkCore;
 
 namespace LoanSystem.Modules.Documents;
 
@@ -11,12 +15,22 @@ public static class ModuleRegistration
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+        var connection = configuration.GetConnectionString("LoanSystem") ?? throw new InvalidOperationException("ConnectionStrings:LoanSystem is required.");
+        services.Configure<FileStorageOptions>(configuration.GetSection("FileStorage"));
+        services.AddDbContext<DocumentsDbContext>(options => options.UseSqlServer(connection));
+        services.AddScoped<IDocumentRepository>(x => x.GetRequiredService<DocumentsDbContext>());
+        services.AddScoped<IFileStorage, LocalFileStorage>();
+        services.AddScoped<IDocumentAccessAuthorizer, UploaderDocumentAccessAuthorizer>();
+        services.AddScoped<DocumentService>();
         return services;
     }
 
     public static IEndpointRouteBuilder MapDocumentsModuleEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
-        return endpoints;
+        DocumentEndpoints.Map(endpoints); return endpoints;
     }
+
+    public static async Task InitializeDocumentsAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
+    { using var scope = services.CreateScope(); await scope.ServiceProvider.GetRequiredService<DocumentsDbContext>().Database.MigrateAsync(cancellationToken); }
 }
