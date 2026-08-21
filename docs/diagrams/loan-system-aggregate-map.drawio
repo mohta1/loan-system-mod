@@ -1,0 +1,114 @@
+<mxfile host="Electron" agent="ChatGPT">
+  <diagram id="aggregate-map" name="Aggregate Map">
+    <mxGraphModel dx="2218" dy="1402" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="n1" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="Borrower" vertex="1">
+          <mxGeometry height="80" width="180" x="40" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="LoanProduct" vertex="1">
+          <mxGeometry height="80" width="180" x="40" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="LoanApplication" vertex="1">
+          <mxGeometry height="100" width="220" x="330" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="PropertyInspection" vertex="1">
+          <mxGeometry height="90" width="220" x="330" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="LoanAccount" vertex="1">
+          <mxGeometry height="110" width="220" x="680" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="Disbursement" vertex="1">
+          <mxGeometry height="110" width="220" x="1040" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="TreasuryPayment" vertex="1">
+          <mxGeometry height="110" width="220" x="1400" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="Repayment" vertex="1">
+          <mxGeometry height="100" width="220" x="1040" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="SalaryDeductionBatch" vertex="1">
+          <mxGeometry height="90" width="220" x="1040" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="n10" parent="1" style="swimlane;horizontal=1;startSize=24;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;" value="Document" vertex="1">
+          <mxGeometry height="90" width="220" x="330" y="560" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="n1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;" target="n3" value="BorrowerId + snapshot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="n2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;" target="n3" value="VersionId + snapshot">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="275" y="300" />
+              <mxPoint x="275" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="n4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" target="n3" value="Inspection outcome">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="n3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" target="n5" value="ApplicationApproved">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="580" y="225" />
+              <mxPoint x="580" y="225" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="n6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" target="n5" value="CapacityRequested">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="n5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" target="n6" value="Reserved / Rejected">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="n6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" target="n7" value="ReadyForTreasury">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="n7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" target="n5" value="PaymentCompleted">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1510" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="n7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" target="n6" value="Completed / Failed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="n8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" target="n5" value="RepaymentPosted">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="n9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;" target="n8" value="creates valid repayments">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="n10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;" target="n3" value="DocumentId">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="290" y="605" />
+              <mxPoint x="290" y="310" />
+              <mxPoint x="390" y="310" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="n10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;" target="n6" value="DocumentId">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="410" y="739.94" />
+              <mxPoint x="1370" y="739.94" />
+              <mxPoint x="1370" y="170.06" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="n10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;" target="n8" value="ReceiptDocumentId">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="440" y="700" />
+              <mxPoint x="1340" y="700" />
+              <mxPoint x="1340" y="410" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

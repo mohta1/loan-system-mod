@@ -1,0 +1,211 @@
+# ============================================================
+# Loan System
+# ASP.NET Core + React/TypeScript + SQL Server + Docker
+# ============================================================
+
+# ----------------------------
+# .NET / ASP.NET Core
+# ----------------------------
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]uild/
+[Bb]uilds/
+artifacts/
+
+# .NET generated / NuGet artifacts
+*.dll
+*.exe
+*.pdb
+*.cache
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# ----------------------------
+# Visual Studio
+# ----------------------------
+.vs/
+*.VC.db
+*.VC.VC.opendb
+*.opendb
+*.dbmdl
+
+# ----------------------------
+# JetBrains Rider / IntelliJ
+# ----------------------------
+.idea/
+*.sln.iml
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# ----------------------------
+# VS Code
+# ----------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# ----------------------------
+# Test results / Coverage
+# ----------------------------
+TestResults/
+test-results/
+coverage/
+coverage-results/
+.coverage/
+*.coverage
+*.coveragexml
+coverage.cobertura.xml
+coverage.opencover.xml
+*.trx
+
+# ----------------------------
+# Benchmark / profiling
+# ----------------------------
+BenchmarkDotNet.Artifacts/
+*.diagsession
+*.psess
+*.vsp
+*.vspx
+*.sap
+
+# ----------------------------
+# Node / React / Vite
+# ----------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+dist/
+dist-ssr/
+.cache/
+.parcel-cache/
+.vite/
+vite.config.*.timestamp-*
+vite.config.*.mjs
+
+# Frontend coverage
+frontend/**/coverage/
+
+# ----------------------------
+# Environment / Secrets
+# ----------------------------
+.env
+.env.*
+!.env.example
+*.env.local
+
+appsettings.Local.json
+appsettings.*.Local.json
+appsettings.*.local.json
+
+secrets.json
+*.secret
+*.secrets
+
+# Certificates / private keys
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+*.cer
+
+# ----------------------------
+# Docker local/runtime data
+# ----------------------------
+docker-data/
+.docker/
+docker-compose.override.yml
+compose.override.yml
+
+# Local mounted application data
+storage/
+uploads/
+sql-data/
+mssql-data/
+
+# ----------------------------
+# SQL Server / Database files
+# ----------------------------
+*.mdf
+*.ldf
+*.ndf
+*.bak
+*.bkp
+*.backup
+
+# ----------------------------
+# Local DB tooling
+# ----------------------------
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ----------------------------
+# Temporary files
+# ----------------------------
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+~$*
+*.orig
+*.rej
+
+# ----------------------------
+# OS files
+# ----------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ----------------------------
+# Misc local tooling
+# ----------------------------
+.history/
+.local/
+
+# ----------------------------
+# Generated API clients / docs
+# Uncomment later if these are generated at build time
+# ----------------------------
+# frontend/**/src/api/generated/
+# openapi.generated.json
