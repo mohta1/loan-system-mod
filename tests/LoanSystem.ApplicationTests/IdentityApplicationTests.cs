@@ -23,7 +23,7 @@ public sealed class IdentityApplicationTests
     {
         public List<User> Users { get; } = []; public int Saves { get; private set; }
         public Task AddAsync(User user, CancellationToken ct) { Users.Add(user); return Task.CompletedTask; }
-        public void SetExpectedVersion(User user, byte[] version) { }
+        public Task EnsureAdministratorContinuityAsync(User user, bool active, IReadOnlyCollection<Guid> roles, CancellationToken ct) => Task.CompletedTask; public void SetExpectedVersion(User user, byte[] version) { }
         public Task<User?> FindAsync(Guid id, CancellationToken ct) => Task.FromResult(Users.SingleOrDefault(x => x.Id == id)); public Task<User?> FindByUsernameAsync(string normalized, CancellationToken ct) => Task.FromResult(Users.SingleOrDefault(x => x.NormalizedUsername == normalized)); public Task<IReadOnlyList<User>> ListAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<User>>(Users); public Task<IReadOnlyList<Role>> RolesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<Role>>([]); public Task ReplaceRolesAsync(User user, IReadOnlyCollection<Guid> ids, CancellationToken ct) { user.UserRoles.Clear(); foreach (var id in ids) user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = id }); return Task.CompletedTask; }
         public Task SaveAsync(CancellationToken ct) { Saves++; return Task.CompletedTask; }
     }

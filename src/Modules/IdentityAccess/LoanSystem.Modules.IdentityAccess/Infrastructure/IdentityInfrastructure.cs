@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -12,6 +14,7 @@ namespace LoanSystem.Modules.IdentityAccess.Infrastructure;
 
 internal sealed class IdentityAccessDbContext(DbContextOptions<IdentityAccessDbContext> options) : DbContext(options), IIdentityStore
 {
+    private IDbContextTransaction? continuityTransaction;
     public DbSet<User> Users => Set<User>(); public DbSet<Role> Roles => Set<Role>(); public DbSet<Permission> Permissions => Set<Permission>();
     protected override void OnModelCreating(ModelBuilder b) { b.ApplyConfigurationsFromAssembly(typeof(IdentityAccessDbContext).Assembly); }
     public Task<User?> FindAsync(Guid id, CancellationToken ct) => Users.Include(x => x.UserRoles).SingleOrDefaultAsync(x => x.Id == id, ct);
@@ -20,8 +23,15 @@ internal sealed class IdentityAccessDbContext(DbContextOptions<IdentityAccessDbC
     public async Task<IReadOnlyList<Role>> RolesAsync(CancellationToken ct) => await Roles.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);
     public Task AddAsync(User user, CancellationToken ct) { Users.Add(user); return Task.CompletedTask; }
     public async Task ReplaceRolesAsync(User user, IReadOnlyCollection<Guid> ids, CancellationToken ct) { var valid = await Roles.Where(x => ids.Contains(x.Id)).Select(x => x.Id).ToListAsync(ct); if (valid.Count != ids.Distinct().Count()) throw new ArgumentException("Unknown role."); Set<UserRole>().RemoveRange(user.UserRoles); foreach (var id in valid) user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = id }); }
+    public async Task EnsureAdministratorContinuityAsync(User user, bool remainsActive, IReadOnlyCollection<Guid> roleIds, CancellationToken ct)
+    {
+        continuityTransaction = await Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var currentlyManages = await Users.Where(x => x.Id == user.Id && x.IsActive).SelectMany(x => x.UserRoles).SelectMany(x => x.Role.RolePermissions).AnyAsync(x => x.Permission.Key == IdentityPermissions.ManageUsers, ct);
+        var willManage = remainsActive && await Roles.Where(x => roleIds.Contains(x.Id)).SelectMany(x => x.RolePermissions).AnyAsync(x => x.Permission.Key == IdentityPermissions.ManageUsers, ct);
+        if (currentlyManages && !willManage && !await Users.Where(x => x.Id != user.Id && x.IsActive).SelectMany(x => x.UserRoles).SelectMany(x => x.Role.RolePermissions).AnyAsync(x => x.Permission.Key == IdentityPermissions.ManageUsers, ct)) { await continuityTransaction.RollbackAsync(ct); await continuityTransaction.DisposeAsync(); continuityTransaction = null; throw new LastAdministratorRequiredException(); }
+    }
     public void SetExpectedVersion(User user, byte[] version) => Entry(user).Property(x => x.RowVersion).OriginalValue = version;
-    public Task SaveAsync(CancellationToken ct) => SaveChangesAsync(ct);
+    public async Task SaveAsync(CancellationToken ct) { try { await SaveChangesAsync(ct); if (continuityTransaction is not null) await continuityTransaction.CommitAsync(ct); } catch { if (continuityTransaction is not null) await continuityTransaction.RollbackAsync(ct); throw; } finally { if (continuityTransaction is not null) await continuityTransaction.DisposeAsync(); continuityTransaction = null; } }
 }
 internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
 {
