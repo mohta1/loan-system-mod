@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BuildingBlocks\LoanSystem.BuildingBlocks.Application\LoanSystem.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\IdentityAccess\LoanSystem.Modules.IdentityAccess\LoanSystem.Modules.IdentityAccess.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Documents\LoanSystem.Modules.Documents\LoanSystem.Modules.Documents.csproj" />
   </ItemGroup>
 
 </Project>
