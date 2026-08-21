@@ -1,0 +1,2 @@
+import {Component,type ErrorInfo,type ReactNode} from 'react';
+export class ErrorBoundary extends Component<{children:ReactNode},{failed:boolean}>{state={failed:false};static getDerivedStateFromError(){return{failed:true}}componentDidCatch(error:Error,info:ErrorInfo){console.error('Application error',error,info.componentStack)}render(){return this.state.failed?<p role="alert">Application unavailable</p>:this.props.children}}

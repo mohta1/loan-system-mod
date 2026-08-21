@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\LoanSystem.Contracts\LoanSystem.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\LoanSystem.BuildingBlocks.Domain\LoanSystem.BuildingBlocks.Domain.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\LoanSystem.BuildingBlocks.Application\LoanSystem.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\LoanSystem.BuildingBlocks.Infrastructure\LoanSystem.BuildingBlocks.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
