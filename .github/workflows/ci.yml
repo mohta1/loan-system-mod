@@ -6,13 +6,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: 10.0.x }
       - run: dotnet restore
       - run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release --collect:"XPlat Code Coverage" --results-directory TestResults
-      - run: python scripts/check_backend_coverage.py "TestResults/**/coverage.cobertura.xml"
+      - run: python -m unittest scripts/tests/test_check_backend_coverage.py
+      - run: python scripts/check_backend_coverage.py --base-ref origin/${{ github.base_ref }} "TestResults/**/coverage.cobertura.xml"
       - uses: actions/upload-artifact@v4
         with: { name: backend-coverage, path: TestResults/**/coverage.cobertura.xml }
   frontend:
@@ -38,4 +40,13 @@ jobs:
       - working-directory: frontend/loan-system-web
         run: npm ci && npx playwright install --with-deps chromium && npm run e2e
       - if: always()
-        run: docker compose logs && docker compose down
+        name: Capture Docker health diagnostics
+        run: |
+          API_CONTAINER="$(docker compose ps -q api)"
+          if [ -n "$API_CONTAINER" ]; then
+            docker inspect "$API_CONTAINER" --format '{{json .State.Health}}' || true
+          fi
+          docker compose ps || true
+          docker compose logs || true
+      - if: always()
+        run: docker compose down

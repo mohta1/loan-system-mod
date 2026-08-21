@@ -220,3 +220,7 @@ TestResults/
 **/coverage/
 **/playwright-report/
 .env
+
+# Python
+__pycache__/
+*.py[cod]
