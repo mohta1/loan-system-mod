@@ -7,7 +7,7 @@ namespace LoanSystem.Modules.Documents.Infrastructure;
 public sealed class DocumentsDbContext(DbContextOptions<DocumentsDbContext> options) : DbContext(options), IDocumentRepository
 {
     public DbSet<Document> Documents => Set<Document>();
-    protected override void OnModelCreating(ModelBuilder modelBuilder) { var e = modelBuilder.Entity<Document>(); e.ToTable("documents", "documents"); e.HasKey(x => x.Id); e.Property(x => x.FileName).HasMaxLength(255).IsRequired(); e.Property(x => x.ContentType).HasMaxLength(127).IsRequired(); e.Property(x => x.StorageKey).HasMaxLength(64).IsRequired(); e.HasIndex(x => x.StorageKey).IsUnique(); }
+    protected override void OnModelCreating(ModelBuilder modelBuilder) { var e = modelBuilder.Entity<Document>(); e.ToTable("documents", "documents"); e.HasKey(x => x.Id); e.Property(x => x.FileName).HasMaxLength(255).IsRequired(); e.Property(x => x.ContentType).HasMaxLength(127).IsRequired(); e.Property(x => x.StorageKey).HasMaxLength(64).IsRequired(); e.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired(); e.HasIndex(x => x.StorageKey).IsUnique(); }
     public Task AddAsync(Document document, CancellationToken ct) => Documents.AddAsync(document, ct).AsTask();
     public Task<Document?> FindAsync(Guid id, CancellationToken ct) => Documents.SingleOrDefaultAsync(x => x.Id == id, ct);
     public void Remove(Document document) => Documents.Remove(document);

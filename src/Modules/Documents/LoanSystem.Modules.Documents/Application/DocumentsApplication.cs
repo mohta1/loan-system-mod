@@ -7,7 +7,7 @@ public interface IFileStorage { Task StoreAsync(string key, Stream content, Canc
 public interface IDocumentRepository { Task AddAsync(Document document, CancellationToken ct); Task<Document?> FindAsync(Guid id, CancellationToken ct); void Remove(Document document); Task SaveAsync(CancellationToken ct); }
 public interface IDocumentAccessAuthorizer { bool CanAccess(Guid uploaderId, Guid currentUserId); }
 public sealed class UploaderDocumentAccessAuthorizer : IDocumentAccessAuthorizer { public bool CanAccess(Guid uploaderId, Guid currentUserId) => uploaderId == currentUserId; }
-public sealed record DocumentDto(Guid DocumentId, string FileName, string ContentType, long Size, DateTimeOffset UploadedAt);
+public sealed record DocumentDto(Guid DocumentId, string FileName, string ContentType, long Size, DateTimeOffset UploadedAt, DocumentStatus Status);
 public sealed class DocumentValidationException(string code) : Exception(code) { public string Code { get; } = code; }
 public sealed class DocumentService(IDocumentRepository repository, IFileStorage storage, IOptions<FileStorageOptions> options, IDocumentAccessAuthorizer authorizer)
 {
@@ -26,6 +26,17 @@ public sealed class DocumentService(IDocumentRepository repository, IFileStorage
     }
     public async Task<Document?> AuthorizedAsync(Guid id, Guid userId, CancellationToken ct) { var d = await repository.FindAsync(id, ct); return d is not null && authorizer.CanAccess(d.UploaderId, userId) ? d : null; }
     public async Task<Stream?> ContentAsync(Document document, CancellationToken ct) => await storage.OpenReadAsync(document.StorageKey, ct);
-    public async Task DeleteAsync(Document document, CancellationToken ct) { await storage.DeleteAsync(document.StorageKey, ct); repository.Remove(document); await repository.SaveAsync(ct); }
-    public static DocumentDto Map(Document d) => new(d.Id, d.FileName, d.ContentType, d.Size, d.UploadedAt);
+    public async Task DeleteAsync(Document document, CancellationToken ct)
+    {
+        if (document.Status == DocumentStatus.Deleted) return;
+        if (document.Status == DocumentStatus.Active)
+        {
+            document.BeginDelete();
+            await repository.SaveAsync(ct);
+        }
+        await storage.DeleteAsync(document.StorageKey, ct);
+        document.CompleteDelete();
+        await repository.SaveAsync(ct);
+    }
+    public static DocumentDto Map(Document d) => new(d.Id, d.FileName, d.ContentType, d.Size, d.UploadedAt, d.Status);
 }
