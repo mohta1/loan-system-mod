@@ -19,8 +19,14 @@ internal static class BorrowerEndpoints
         group.MapPost("/{id:guid}/deactivate", (Guid id, HttpRequest request, BorrowerService service, CancellationToken cancellationToken) => Status(id, false, request, service, cancellationToken)).RequireAuthorization(BorrowerPermissions.ManageStatus);
     }
 
-    private static async Task<IResult> Search(string? civilNumber, string? employeeNumber, string? name, string? organization, BorrowerStatus? status, int pageNumber, int pageSize, BorrowerService service, CancellationToken ct) =>
-        Results.Ok(await service.SearchAsync(new(civilNumber, employeeNumber, name, organization, status, pageNumber == 0 ? 1 : pageNumber, pageSize == 0 ? 25 : pageSize), ct));
+    private static async Task<IResult> Search(string? civilNumber, string? employeeNumber, string? name, string? organization, BorrowerStatus? status, int? pageNumber, int? pageSize, BorrowerService service, CancellationToken ct)
+    {
+        var requestedPageNumber = pageNumber ?? 1;
+        var requestedPageSize = pageSize ?? 25;
+        if (requestedPageNumber < 1 || requestedPageSize < 1 || requestedPageSize > 100)
+            return Problem(400, "Pagination values are invalid", "borrowers.invalidPagination");
+        return Results.Ok(await service.SearchAsync(new(civilNumber, employeeNumber, name, organization, status, requestedPageNumber, requestedPageSize), ct));
+    }
 
     private static async Task<IResult> Get(Guid id, BorrowerService service, CancellationToken ct)
     {

@@ -34,6 +34,14 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
         Assert.Equal(civil, JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync()).RootElement.GetProperty("civilNumber").GetString());
         Assert.False(string.IsNullOrWhiteSpace(detailResponse.Headers.ETag?.Tag));
 
+        var defaultsResponse = await client.GetAsync("/api/v1/borrowers");
+        Assert.Equal(HttpStatusCode.OK, defaultsResponse.StatusCode);
+        var defaults = JsonDocument.Parse(await defaultsResponse.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal(1, defaults.GetProperty("pageNumber").GetInt32());
+        Assert.Equal(25, defaults.GetProperty("pageSize").GetInt32());
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/borrowers?pageNumber=0&pageSize=25")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/borrowers?pageNumber=1&pageSize=101")).StatusCode);
+
         var search = await client.GetFromJsonAsync<JsonElement>($"/api/v1/borrowers?civilNumber={civil}&employeeNumber={employee}&name=Integration&organization=MOD&status=Active&pageNumber=1&pageSize=1");
         Assert.Equal(1, search.GetProperty("totalCount").GetInt32());
         Assert.Equal(id, search.GetProperty("items")[0].GetProperty("borrowerId").GetGuid());
@@ -100,44 +108,51 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
     public async Task Http_policies_enforce_effective_borrower_permissions()
     {
         var suffix = Guid.NewGuid().ToString("N");
-        using var anonymous = fixture.Factory.CreateClient();
-        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/v1/borrowers")).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/v1/borrowers", Input($"anonymous-{suffix}", $"anonymous-employee-{suffix}", "Anonymous", "MOD"))).StatusCode);
+        try
+        {
+            using var anonymous = fixture.Factory.CreateClient();
+            Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/v1/borrowers")).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/v1/borrowers", Input($"anonymous-{suffix}", $"anonymous-employee-{suffix}", "Anonymous", "MOD"))).StatusCode);
 
-        using var admin = fixture.Factory.CreateClient(new() { HandleCookies = true });
-        await Login(admin);
-        var seededResponse = await admin.PostAsJsonAsync("/api/v1/borrowers", Input($"policy-civil-{suffix}", $"policy-employee-{suffix}", "Policy Borrower", "MOD"));
-        Assert.Equal(HttpStatusCode.Created, seededResponse.StatusCode);
-        var seeded = JsonDocument.Parse(await seededResponse.Content.ReadAsStringAsync()).RootElement;
-        var borrowerId = seeded.GetProperty("borrowerId").GetGuid();
-        var etag = await FreshEtag(admin, borrowerId);
+            using var admin = fixture.Factory.CreateClient(new() { HandleCookies = true });
+            await Login(admin);
+            var seededResponse = await admin.PostAsJsonAsync("/api/v1/borrowers", Input($"policy-civil-{suffix}", $"policy-employee-{suffix}", "Policy Borrower", "MOD"));
+            Assert.Equal(HttpStatusCode.Created, seededResponse.StatusCode);
+            var seeded = JsonDocument.Parse(await seededResponse.Content.ReadAsStringAsync()).RootElement;
+            var borrowerId = seeded.GetProperty("borrowerId").GetGuid();
+            var etag = await FreshEtag(admin, borrowerId);
 
-        var read = await PermissionClient(admin, $"read-{suffix}", "borrowers.read");
-        Assert.Equal(HttpStatusCode.OK, (await read.GetAsync("/api/v1/borrowers")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await read.GetAsync($"/api/v1/borrowers/{borrowerId}")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await read.PostAsJsonAsync("/api/v1/borrowers", Input($"read-civil-{suffix}", $"read-employee-{suffix}", "Denied", "MOD"))).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await Send(read, HttpMethod.Put, $"/api/v1/borrowers/{borrowerId}", etag, Input($"policy-civil-{suffix}", $"policy-employee-{suffix}", "Denied", "MOD"))).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await Send(read, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/deactivate", etag, new { })).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await Send(read, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/activate", etag, new { })).StatusCode);
+            var read = await PermissionClient(admin, $"read-{suffix}", "borrowers.read");
+            Assert.Equal(HttpStatusCode.OK, (await read.GetAsync("/api/v1/borrowers")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await read.GetAsync($"/api/v1/borrowers/{borrowerId}")).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await read.PostAsJsonAsync("/api/v1/borrowers", Input($"read-civil-{suffix}", $"read-employee-{suffix}", "Denied", "MOD"))).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await Send(read, HttpMethod.Put, $"/api/v1/borrowers/{borrowerId}", etag, Input($"policy-civil-{suffix}", $"policy-employee-{suffix}", "Denied", "MOD"))).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await Send(read, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/deactivate", etag, new { })).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await Send(read, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/activate", etag, new { })).StatusCode);
 
-        var create = await PermissionClient(admin, $"create-{suffix}", "borrowers.create");
-        Assert.Equal(HttpStatusCode.Created, (await create.PostAsJsonAsync("/api/v1/borrowers", Input($"create-civil-{suffix}", $"create-employee-{suffix}", "Created", "MOD"))).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await create.GetAsync("/api/v1/borrowers")).StatusCode);
+            var create = await PermissionClient(admin, $"create-{suffix}", "borrowers.create");
+            Assert.Equal(HttpStatusCode.Created, (await create.PostAsJsonAsync("/api/v1/borrowers", Input($"create-civil-{suffix}", $"create-employee-{suffix}", "Created", "MOD"))).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await create.GetAsync("/api/v1/borrowers")).StatusCode);
 
-        var update = await PermissionClient(admin, $"update-{suffix}", "borrowers.update");
-        var updatedResponse = await Send(update, HttpMethod.Put, $"/api/v1/borrowers/{borrowerId}", etag, Input($"policy-civil-{suffix}", $"policy-employee-{suffix}", "Permission Updated", "MOD"));
-        Assert.Equal(HttpStatusCode.OK, updatedResponse.StatusCode);
-        etag = await FreshEtag(admin, borrowerId);
-        Assert.Equal(HttpStatusCode.Forbidden, (await update.PostAsJsonAsync("/api/v1/borrowers", Input($"update-civil-{suffix}", $"update-employee-{suffix}", "Denied", "MOD"))).StatusCode);
+            var update = await PermissionClient(admin, $"update-{suffix}", "borrowers.update");
+            var updatedResponse = await Send(update, HttpMethod.Put, $"/api/v1/borrowers/{borrowerId}", etag, Input($"policy-civil-{suffix}", $"policy-employee-{suffix}", "Permission Updated", "MOD"));
+            Assert.Equal(HttpStatusCode.OK, updatedResponse.StatusCode);
+            etag = await FreshEtag(admin, borrowerId);
+            Assert.Equal(HttpStatusCode.Forbidden, (await update.PostAsJsonAsync("/api/v1/borrowers", Input($"update-civil-{suffix}", $"update-employee-{suffix}", "Denied", "MOD"))).StatusCode);
 
-        var status = await PermissionClient(admin, $"status-{suffix}", "borrowers.manageStatus");
-        var deactivated = await Send(status, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/deactivate", etag, new { });
-        Assert.Equal(HttpStatusCode.OK, deactivated.StatusCode);
-        etag = await FreshEtag(admin, borrowerId);
-        var activated = await Send(status, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/activate", etag, new { });
-        Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
-        Assert.False(string.IsNullOrWhiteSpace(await FreshEtag(admin, borrowerId)));
-        Assert.Equal(HttpStatusCode.Forbidden, (await status.GetAsync($"/api/v1/borrowers/{borrowerId}")).StatusCode);
+            var status = await PermissionClient(admin, $"status-{suffix}", "borrowers.manageStatus");
+            var deactivated = await Send(status, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/deactivate", etag, new { });
+            Assert.Equal(HttpStatusCode.OK, deactivated.StatusCode);
+            etag = await FreshEtag(admin, borrowerId);
+            var activated = await Send(status, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/activate", etag, new { });
+            Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+            Assert.False(string.IsNullOrWhiteSpace(await FreshEtag(admin, borrowerId)));
+            Assert.Equal(HttpStatusCode.Forbidden, (await status.GetAsync($"/api/v1/borrowers/{borrowerId}")).StatusCode);
+        }
+        finally
+        {
+            await CleanupPermissionTestData(suffix);
+        }
     }
 
     private async Task<HttpClient> PermissionClient(HttpClient administrator, string username, string permissionKey)
@@ -147,7 +162,7 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
         {
             var database = scope.ServiceProvider.GetRequiredService<IdentityAccessDbContext>();
             var permission = await database.Permissions.SingleAsync(x => x.Key == permissionKey);
-            var role = new Role { Id = Guid.NewGuid(), Name = $"Test {permissionKey} {Guid.NewGuid():N}" };
+            var role = new Role { Id = Guid.NewGuid(), Name = $"Test {permissionKey} {username}" };
             database.Roles.Add(role);
             database.Add(new RolePermission { RoleId = role.Id, PermissionId = permission.Id });
             await database.SaveChangesAsync();
@@ -163,6 +178,18 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
         var client = fixture.Factory.CreateClient(new() { HandleCookies = true });
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/login", new { username, password })).StatusCode);
         return client;
+    }
+
+    private async Task CleanupPermissionTestData(string suffix)
+    {
+        using var scope = fixture.Factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<IdentityAccessDbContext>();
+        var userIds = await database.Users.Where(x => x.Username.Contains(suffix)).Select(x => x.Id).ToListAsync();
+        var roleIds = await database.Roles.Where(x => x.Name.Contains(suffix)).Select(x => x.Id).ToListAsync();
+        await database.Set<UserRole>().Where(x => userIds.Contains(x.UserId)).ExecuteDeleteAsync();
+        await database.Users.Where(x => userIds.Contains(x.Id)).ExecuteDeleteAsync();
+        await database.Set<RolePermission>().Where(x => roleIds.Contains(x.RoleId)).ExecuteDeleteAsync();
+        await database.Roles.Where(x => roleIds.Contains(x.Id)).ExecuteDeleteAsync();
     }
 
     private static async Task<string> FreshEtag(HttpClient reader, Guid borrowerId)
