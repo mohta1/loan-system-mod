@@ -7,10 +7,10 @@ beforeEach(() => vi.restoreAllMocks());
 
 test('searches, creates, and gets borrowers', async () => {
   const fetch = vi.spyOn(globalThis, 'fetch')
-    .mockResolvedValueOnce(Response.json({ items: [borrower], pageNumber: 1, pageSize: 25, totalCount: 1 }))
+    .mockResolvedValueOnce(Response.json({ items: [{ borrowerId: borrower.borrowerId, civilNumber: borrower.civilNumber, employeeNumber: borrower.employeeNumber, fullName: borrower.fullName, nationality: borrower.nationality, organization: borrower.organization, isActive: true }], pageNumber: 1, pageSize: 25, totalCount: 1 }))
     .mockResolvedValueOnce(Response.json(borrower, { status: 201 }))
     .mockResolvedValueOnce(Response.json(borrower));
-  expect((await borrowersApi.search('name=Ali')).items).toHaveLength(1);
+  const results=await borrowersApi.search('name=Ali');expect(results.items).toHaveLength(1);expect(results.items[0]).not.toHaveProperty('employmentInformation');
   expect((await borrowersApi.create(input)).borrowerId).toBe('b1');
   expect((await borrowersApi.get('b1')).fullName).toBe('Ali');
   expect(fetch.mock.calls[0][0]).toBe('/api/v1/borrowers?name=Ali');

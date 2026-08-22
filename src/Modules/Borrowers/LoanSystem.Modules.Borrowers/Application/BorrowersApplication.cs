@@ -4,7 +4,8 @@ namespace LoanSystem.Modules.Borrowers.Application;
 public static class BorrowerPermissions { public const string Read = "borrowers.read", Create = "borrowers.create", Update = "borrowers.update", ManageStatus = "borrowers.manageStatus"; }
 public sealed record BorrowerInput(string CivilNumber, string? EmployeeNumber, string FullName, string? PhoneNumber, string Nationality, string Organization, string? RankGrade, string? EmploymentInformation);
 public sealed record BorrowerDto(Guid BorrowerId, string CivilNumber, string? EmployeeNumber, string FullName, string? PhoneNumber, string Nationality, string Organization, string? RankGrade, string? EmploymentInformation, string Status, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string ETag);
-public sealed record BorrowerPage(IReadOnlyList<BorrowerDto> Items, int PageNumber, int PageSize, int TotalCount);
+public sealed record BorrowerListItemDto(Guid BorrowerId, string CivilNumber, string? EmployeeNumber, string FullName, string Nationality, string Organization, bool IsActive);
+public sealed record BorrowerPage(IReadOnlyList<BorrowerListItemDto> Items, int PageNumber, int PageSize, int TotalCount);
 public sealed record BorrowerSearch(string? CivilNumber, string? EmployeeNumber, string? Name, string? Organization, BorrowerStatus? Status, int PageNumber = 1, int PageSize = 25);
 public interface IBorrowerStore { Task<bool> CivilExistsAsync(string value, Guid? except, CancellationToken ct); Task<bool> EmployeeExistsAsync(string value, Guid? except, CancellationToken ct); Task AddAsync(Borrower borrower, CancellationToken ct); Task<Borrower?> FindAsync(Guid id, CancellationToken ct); Task<BorrowerPage> SearchAsync(BorrowerSearch search, CancellationToken ct); void ExpectVersion(Borrower borrower, byte[] version); Task SaveAsync(CancellationToken ct); }
 public sealed class BorrowerConflictException(string code) : Exception(code) { public string Code { get; } = code; }

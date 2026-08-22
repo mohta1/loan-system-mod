@@ -62,7 +62,15 @@ public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> opti
         var rows = await query.OrderBy(x => x.FullName)
             .Skip((search.PageNumber - 1) * search.PageSize)
             .Take(search.PageSize)
+            .Select(x => new BorrowerListItemDto(
+                x.Id,
+                x.CivilNumber,
+                x.EmployeeNumber,
+                x.FullName,
+                x.Nationality,
+                x.Organization,
+                x.Status == BorrowerStatus.Active))
             .ToListAsync(ct);
-        return new(rows.Select(BorrowerService.Map).ToList(), search.PageNumber, search.PageSize, count);
+        return new(rows, search.PageNumber, search.PageSize, count);
     }
 }

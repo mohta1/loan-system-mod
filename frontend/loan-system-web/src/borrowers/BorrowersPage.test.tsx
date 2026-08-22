@@ -10,7 +10,7 @@ let borrower: Borrower;
 const all = ['borrowers.read', 'borrowers.create', 'borrowers.update', 'borrowers.manageStatus'];
 beforeEach(() => { vi.restoreAllMocks(); applyLanguage('en'); borrower = { borrowerId: 'b1', civilNumber: 'C1', employeeNumber: 'E1', fullName: 'Ali Borrower', phoneNumber: '9', nationality: 'Omani', organization: 'MOD', rankGrade: 'G7', employmentInformation: 'Staff', status: 'Active', createdAt: '2026-01-01', updatedAt: '2026-01-01', eTag: 'AQID' }; vi.stubGlobal('confirm', vi.fn(() => true)); });
 function show(permissions = all) { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><BorrowersPage permissions={permissions} /></QueryClientProvider>); }
-function api() { return vi.spyOn(globalThis, 'fetch').mockImplementation(async (value, init) => { const url = String(value); if (init?.method === 'POST' && !url.endsWith('activate') && !url.endsWith('deactivate')) return Response.json(borrower, { status: 201 }); if (init?.method === 'PUT') { borrower = { ...borrower, ...JSON.parse(String(init.body)), eTag: 'NEW' }; return Response.json(borrower); } if (url.endsWith('deactivate')) { borrower = { ...borrower, status: 'Inactive' }; return Response.json(borrower); } if (url.endsWith('activate')) { borrower = { ...borrower, status: 'Active' }; return Response.json(borrower); } return Response.json({ items: [borrower], pageNumber: 1, pageSize: 25, totalCount: 30 }); }); }
+function api() { return vi.spyOn(globalThis, 'fetch').mockImplementation(async (value, init) => { const url = String(value); if (!init?.method && url.endsWith('/b1')) return Response.json(borrower); if (init?.method === 'POST' && !url.endsWith('activate') && !url.endsWith('deactivate')) return Response.json(borrower, { status: 201 }); if (init?.method === 'PUT') { borrower = { ...borrower, ...JSON.parse(String(init.body)), eTag: 'NEW' }; return Response.json(borrower); } if (url.endsWith('deactivate')) { borrower = { ...borrower, status: 'Inactive' }; return Response.json(borrower); } if (url.endsWith('activate')) { borrower = { ...borrower, status: 'Active' }; return Response.json(borrower); } return Response.json({ items: [{ ...borrower, isActive: borrower.status === 'Active' }], pageNumber: 1, pageSize: 25, totalCount: 30 }); }); }
 
 test('renders, searches, paginates, and opens details with permission-aware controls', async () => {
   const fetch = api(); show(); expect(await screen.findByText('Ali Borrower')).toBeInTheDocument();
@@ -28,7 +28,7 @@ test('validates and successfully creates', async () => {
 });
 
 test('shows duplicate civil number and concurrency errors', async () => {
-  vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ items: [borrower], pageNumber: 1, pageSize: 25, totalCount: 1 })).mockResolvedValueOnce(Response.json({ errorCode: 'borrowers.civilNumberConflict' }, { status: 409 })); show(); await screen.findByText('Ali Borrower'); await userEvent.click(screen.getByRole('button', { name: /Create Borrower/ })); for (const [label, value] of [['Civil Number','C1'],['Full Name','New'],['Nationality','Omani'],['Organization','MOD']]) await userEvent.type(screen.getByLabelText(new RegExp(label)), value); await userEvent.click(screen.getByRole('button', { name: 'Create' })); expect(await screen.findByRole('alert')).toHaveTextContent('already exists');
+  vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ items: [{ ...borrower, isActive: borrower.status === 'Active' }], pageNumber: 1, pageSize: 25, totalCount: 1 })).mockResolvedValueOnce(Response.json({ errorCode: 'borrowers.civilNumberConflict' }, { status: 409 })); show(); await screen.findByText('Ali Borrower'); await userEvent.click(screen.getByRole('button', { name: /Create Borrower/ })); for (const [label, value] of [['Civil Number','C1'],['Full Name','New'],['Nationality','Omani'],['Organization','MOD']]) await userEvent.type(screen.getByLabelText(new RegExp(label)), value); await userEvent.click(screen.getByRole('button', { name: 'Create' })); expect(await screen.findByRole('alert')).toHaveTextContent('already exists');
 });
 
 test('edits with initially disabled Save and deactivates then activates', async () => {
@@ -47,7 +47,8 @@ test.each([{ status: 403, text: 'do not have permission' }, { status: 500, text:
 
 test('shows stale update concurrency message', async () => {
   vi.spyOn(globalThis, 'fetch')
-    .mockResolvedValueOnce(Response.json({ items: [borrower], pageNumber: 1, pageSize: 25, totalCount: 1 }))
+    .mockResolvedValueOnce(Response.json({ items: [{ ...borrower, isActive: borrower.status === 'Active' }], pageNumber: 1, pageSize: 25, totalCount: 1 }))
+    .mockResolvedValueOnce(Response.json(borrower))
     .mockResolvedValueOnce(Response.json({ errorCode: 'borrowers.concurrencyConflict' }, { status: 412 }));
   show();
   await userEvent.click(await screen.findByText('Ali Borrower'));
@@ -56,4 +57,32 @@ test('shows stale update concurrency message', async () => {
   await userEvent.type(screen.getByLabelText(/Full Name/), 'Concurrent Change');
   await userEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('changed by another user');
+});
+
+test('failed deactivate is visible and preserves Active status', async () => {
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(Response.json({ items: [{ ...borrower, isActive: true }], pageNumber: 1, pageSize: 25, totalCount: 1 }))
+    .mockResolvedValueOnce(Response.json(borrower))
+    .mockResolvedValueOnce(Response.json({}, { status: 403 }));
+  show();
+  await userEvent.click(await screen.findByText('Ali Borrower'));
+  await userEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('do not have permission');
+  expect(screen.getByText('Active')).toBeInTheDocument();
+  expect(screen.queryByText('Inactive')).not.toBeInTheDocument();
+});
+
+test('failed activate shows localized concurrency error and preserves Inactive status', async () => {
+  borrower = { ...borrower, status: 'Inactive' };
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(Response.json({ items: [{ ...borrower, isActive: false }], pageNumber: 1, pageSize: 25, totalCount: 1 }))
+    .mockResolvedValueOnce(Response.json(borrower))
+    .mockResolvedValueOnce(Response.json({ errorCode: 'borrowers.concurrencyConflict' }, { status: 412 }));
+  applyLanguage('ar');
+  show();
+  await userEvent.click(await screen.findByText('Ali Borrower'));
+  await userEvent.click(await screen.findByRole('button', { name: 'تفعيل' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('تم تعديل المقترض');
+  expect(screen.getByText('غير نشط')).toBeInTheDocument();
+  expect(document.documentElement.dir).toBe('rtl');
 });
