@@ -45,17 +45,21 @@ public sealed class OpenXmlBorrowerWorkbookParser : IBorrowerWorkbookParser
         var rows = worksheet.Worksheet.GetFirstChild<SheetData>()?.Elements<Row>().ToList() ?? [];
         if (rows.Count == 0) throw new BorrowerImportException("borrowerImports.invalidTemplate");
         var headers = Values(rows[0], part).Select(x => x.Value).ToArray();
-        if (headers.Length < BorrowerImportTemplate.RequiredColumns || !BorrowerImportTemplate.Columns.Take(BorrowerImportTemplate.RequiredColumns).SequenceEqual(headers.Take(BorrowerImportTemplate.RequiredColumns), StringComparer.Ordinal))
+        if (headers.Any(string.IsNullOrWhiteSpace) || headers.Distinct(StringComparer.Ordinal).Count() != headers.Length || headers.Any(x => !BorrowerImportTemplate.Columns.Contains(x, StringComparer.Ordinal)))
             throw new BorrowerImportException("borrowerImports.invalidTemplate");
-        if (headers.Any(x => !BorrowerImportTemplate.Columns.Contains(x, StringComparer.Ordinal))) throw new BorrowerImportException("borrowerImports.invalidTemplate");
+        var columns = headers.Select((header, index) => (header, index)).ToDictionary(x => x.header, x => x.index, StringComparer.Ordinal);
+        if (BorrowerImportTemplate.Columns.Take(BorrowerImportTemplate.RequiredColumns).Any(required => !columns.ContainsKey(required)))
+            throw new BorrowerImportException("borrowerImports.invalidTemplate");
         var result = new List<ParsedBorrowerRow>();
         foreach (var row in rows.Skip(1))
         {
             var cells = Values(row, part); if (cells.All(x => string.IsNullOrWhiteSpace(x.Value))) continue;
             if (result.Count >= maximumRows) throw new BorrowerImportException("borrowerImports.tooManyRows");
-            var values = Enumerable.Range(0, BorrowerImportTemplate.Columns.Length).Select(i => i < cells.Count ? cells[i] : ("", false)).ToArray();
-            var input = new BorrowerInput(values[0].Item1, Null(values[4].Item1), values[1].Item1, Null(values[5].Item1), values[2].Item1, values[3].Item1, Null(values[6].Item1), Null(values[7].Item1));
-            var errors = new List<string>(); if (values.Any(x => x.Item2)) errors.Add("borrowerImports.formulaNotSupported");
+            CellText Field(string name) => columns.TryGetValue(name, out var index) && index < cells.Count ? cells[index] : new("", false, false);
+            var civil = Field("Civil Number"); var employee = Field("Employee Number");
+            var input = new BorrowerInput(civil.Value, Null(employee.Value), Field("Full Name").Value, Null(Field("Phone Number").Value), Field("Nationality").Value, Field("Organization").Value, Null(Field("Rank / Grade").Value), Null(Field("Employment Information").Value));
+            var errors = new List<string>(); if (cells.Any(x => x.Formula)) errors.Add("borrowerImports.formulaNotSupported");
+            if (civil.Numeric || employee.Numeric) errors.Add("borrowerImports.numericIdentifierNotSupported");
             try { _ = Borrower.Register(input.CivilNumber, input.EmployeeNumber, input.FullName, input.PhoneNumber, input.Nationality, input.Organization, input.RankGrade, input.EmploymentInformation); }
             catch (BorrowerValidationException) { errors.Add("borrowers.validation"); }
             result.Add(new((int)(row.RowIndex?.Value ?? (uint)(result.Count + 2)), input with { CivilNumber = input.CivilNumber.Trim(), EmployeeNumber = Null(input.EmployeeNumber), FullName = input.FullName.Trim(), PhoneNumber = Null(input.PhoneNumber), Nationality = input.Nationality.Trim(), Organization = input.Organization.Trim(), RankGrade = Null(input.RankGrade), EmploymentInformation = Null(input.EmploymentInformation) }, errors));
@@ -63,16 +67,18 @@ public sealed class OpenXmlBorrowerWorkbookParser : IBorrowerWorkbookParser
         if (result.Count == 0) throw new BorrowerImportException("borrowerImports.invalidTemplate"); return result;
     }
     private static string? Null(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    private static List<(string Value, bool Formula)> Values(Row row, WorkbookPart part)
+    private static List<CellText> Values(Row row, WorkbookPart part)
     {
-        var result = new List<(string, bool)>(); var column = 0;
+        var result = new List<CellText>(); var column = 0;
         foreach (var cell in row.Elements<Cell>())
         {
-            var target = Column(cell.CellReference?.Value); while (column++ < target) result.Add(("", false));
-            result.Add((Text(cell, part).Trim(), cell.CellFormula is not null));
+            var target = Column(cell.CellReference?.Value); while (column++ < target) result.Add(new("", false, false));
+            var numeric = cell.DataType is null || cell.DataType.Value == CellValues.Number;
+            result.Add(new(Text(cell, part).Trim(), cell.CellFormula is not null, numeric));
         }
         return result;
     }
+    private sealed record CellText(string Value, bool Formula, bool Numeric);
     private static int Column(string? reference) { if (string.IsNullOrEmpty(reference)) return 0; var n = 0; foreach (var c in reference.TakeWhile(char.IsLetter)) n = n * 26 + char.ToUpperInvariant(c) - 'A' + 1; return Math.Max(0, n - 1); }
     private static string Text(Cell cell, WorkbookPart part)
     {
@@ -96,21 +102,24 @@ public sealed class BorrowerImportStore(BorrowersDbContext db) : IBorrowerImport
     public async Task<BorrowerImportDto?> GetAsync(Guid batchId, CancellationToken ct) { var batch = await db.ImportBatches.AsNoTracking().Include(x => x.Rows).SingleOrDefaultAsync(x => x.BatchId == batchId, ct); return batch is null ? null : Map(batch); }
     public async Task<BorrowerImportDto?> ExecuteAsync(Guid batchId, CancellationToken ct)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        var batch = await db.ImportBatches.Include(x => x.Rows).SingleOrDefaultAsync(x => x.BatchId == batchId, ct); if (batch is null) return null;
-        if (batch.Status == "Completed") return Map(batch);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"EXEC sp_getapplock @Resource={"borrower-import:" + batchId}, @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=15000", ct);
+        var batch = await db.ImportBatches.Include(x => x.Rows).SingleOrDefaultAsync(x => x.BatchId == batchId, ct);
+        if (batch is null) { await transaction.CommitAsync(ct); return null; }
+        if (batch.Status == "Completed") { var completed = Map(batch); await transaction.CommitAsync(ct); return completed; }
         if (batch.Status != "Validated") throw new BorrowerImportException("borrowerImports.batchNotExecutable"); batch.Status = "Executing"; await db.SaveChangesAsync(ct);
         foreach (var row in batch.Rows.Where(x => x.Status == "Valid"))
         {
             var input = JsonSerializer.Deserialize<BorrowerInput>(row.RawPayload)!;
+            Borrower? borrower = null;
             try
             {
-                var borrower = Borrower.Register(input.CivilNumber, input.EmployeeNumber, input.FullName, input.PhoneNumber, input.Nationality, input.Organization, input.RankGrade, input.EmploymentInformation);
+                borrower = Borrower.Register(input.CivilNumber, input.EmployeeNumber, input.FullName, input.PhoneNumber, input.Nationality, input.Organization, input.RankGrade, input.EmploymentInformation);
                 if (await db.CivilExistsAsync(borrower.CivilNumber, null, ct)) throw new BorrowerConflictException("borrowers.civilNumberConflict");
                 if (borrower.EmployeeNumber is not null && await db.EmployeeExistsAsync(borrower.EmployeeNumber, null, ct)) throw new BorrowerConflictException("borrowers.employeeNumberConflict");
                 await db.AddAsync(borrower, ct); await db.SaveAsync(ct); row.BorrowerId = borrower.Id; row.Status = "Imported"; batch.ImportedRows++;
             }
-            catch (BorrowerConflictException ex) { row.Status = "Failed"; row.ErrorCode = ex.Code; batch.FailedRows++; }
+            catch (BorrowerConflictException ex) { if (borrower is not null) db.Entry(borrower).State = EntityState.Detached; row.Status = "Failed"; row.ErrorCode = ex.Code; batch.FailedRows++; }
             catch (BorrowerValidationException) { row.Status = "Failed"; row.ErrorCode = "borrowers.validation"; batch.FailedRows++; }
         }
         batch.FailedRows += batch.InvalidRows; batch.Status = "Completed"; batch.CompletedAtUtc = DateTimeOffset.UtcNow; await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return Map(batch);

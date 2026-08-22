@@ -44,6 +44,42 @@ public sealed class BorrowerWorkbookParserTests
         Assert.Contains("borrowerImports.formulaNotSupported", formulaRow.Errors);
     }
 
+    [Fact]
+    public void Maps_reordered_optional_headers_by_name_and_allows_missing_optional_headers()
+    {
+        using var reordered = Workbook(["Civil Number", "Full Name", "Nationality", "Organization", "Phone Number", "Employee Number"], ["001", "Name", "Omani", "MOD", "9000", "E-01"]);
+        var row = Assert.Single(new OpenXmlBorrowerWorkbookParser().Parse(reordered, 10));
+        Assert.Equal("E-01", row.Input.EmployeeNumber); Assert.Equal("9000", row.Input.PhoneNumber);
+        using var requiredOnly = Workbook(BorrowerImportTemplate.Columns[..4], ["002", "Name", "Omani", "MOD"]);
+        var requiredRow = Assert.Single(new OpenXmlBorrowerWorkbookParser().Parse(requiredOnly, 10)); Assert.Null(requiredRow.Input.EmployeeNumber); Assert.Null(requiredRow.Input.PhoneNumber);
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("duplicate")]
+    [InlineData("missing")]
+    public void Rejects_unknown_duplicate_or_missing_required_headers(string kind)
+    {
+        string[] headers = kind switch
+        {
+            "unknown" => ["Civil Number", "Full Name", "Nationality", "Organization", "Unknown"],
+            "duplicate" => ["Civil Number", "Full Name", "Nationality", "Organization", "Civil Number"],
+            _ => ["Civil Number", "Full Name", "Nationality"]
+        };
+        using var workbook = Workbook(headers, ["001", "Name", "Omani", "MOD"]);
+        Assert.Equal("borrowerImports.invalidTemplate", Assert.Throws<BorrowerImportException>(() => new OpenXmlBorrowerWorkbookParser().Parse(workbook, 10)).Code);
+    }
+
+    [Fact]
+    public void Rejects_numeric_identifier_cells_without_converting_them()
+    {
+        using var workbook = Workbook(BorrowerImportTemplate.Columns, ["123", "Name", "Omani", "MOD", "0042"]);
+        var document = SpreadsheetDocument.Open(workbook, true); var cells = document.WorkbookPart!.WorksheetParts.Single().Worksheet.GetFirstChild<SheetData>()!.Elements<Row>().Skip(1).Single().Elements<Cell>().ToArray();
+        cells[0].DataType = CellValues.Number; cells[0].InlineString = null; cells[0].CellValue = new CellValue("123"); document.Dispose(); workbook.Position = 0;
+        var row = Assert.Single(new OpenXmlBorrowerWorkbookParser().Parse(workbook, 10));
+        Assert.Contains("borrowerImports.numericIdentifierNotSupported", row.Errors); Assert.Equal("123", row.Input.CivilNumber); Assert.Equal("0042", row.Input.EmployeeNumber);
+    }
+
     private static MemoryStream Workbook(string[] headers, params string[][] rows)
     {
         var stream = new MemoryStream(); using (var document = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook, true))
