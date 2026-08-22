@@ -60,6 +60,7 @@ public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> opti
 
         var count = await query.CountAsync(ct);
         var rows = await query.OrderBy(x => x.FullName)
+            .ThenBy(x => x.Id)
             .Skip((search.PageNumber - 1) * search.PageSize)
             .Take(search.PageSize)
             .Select(x => new BorrowerListItemDto(
