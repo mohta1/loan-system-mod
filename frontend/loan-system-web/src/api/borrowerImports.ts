@@ -1,0 +1,5 @@
+import{ApiError}from'./identity';
+export type ImportRow={rowNumber:number;status:string;civilNumber:string;employeeNumber?:string;errorCodes:string[];borrowerId?:string};
+export type ImportBatch={batchId:string;sourceDocumentId:string;status:string;totalRows:number;validRows:number;invalidRows:number;importedRows:number;failedRows:number;createdAtUtc:string;completedAtUtc?:string;rows:ImportRow[]};
+async function call(url:string,init?:RequestInit){const response=await fetch(url,{...init,credentials:'same-origin'});if(response.status===401)dispatchEvent(new Event('identity:unauthorized'));if(!response.ok){let code:string|undefined;try{code=(await response.json() as{errorCode?:string}).errorCode}catch{/**/}throw new ApiError(response.status,code)}return response.json()as Promise<ImportBatch>}
+export const borrowerImportsApi={validate:(file:File)=>{const body=new FormData();body.append('file',file);return call('/api/v1/borrower-imports/validate',{method:'POST',body})},get:(id:string)=>call(`/api/v1/borrower-imports/${id}`),execute:(id:string)=>call(`/api/v1/borrower-imports/${id}/execute`,{method:'POST'})};

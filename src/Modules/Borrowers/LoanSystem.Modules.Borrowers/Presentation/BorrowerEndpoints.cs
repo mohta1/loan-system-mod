@@ -3,6 +3,8 @@ using LoanSystem.Modules.Borrowers.Domain;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Options;
+using System.Security.Claims;
 
 namespace LoanSystem.Modules.Borrowers.Presentation;
 
@@ -17,6 +19,24 @@ internal static class BorrowerEndpoints
         group.MapPut("/{id:guid}", Update).RequireAuthorization(BorrowerPermissions.Update);
         group.MapPost("/{id:guid}/activate", (Guid id, HttpRequest request, BorrowerService service, CancellationToken cancellationToken) => Status(id, true, request, service, cancellationToken)).RequireAuthorization(BorrowerPermissions.ManageStatus);
         group.MapPost("/{id:guid}/deactivate", (Guid id, HttpRequest request, BorrowerService service, CancellationToken cancellationToken) => Status(id, false, request, service, cancellationToken)).RequireAuthorization(BorrowerPermissions.ManageStatus);
+        var imports = endpoints.MapGroup("/api/v1/borrower-imports").WithTags("Borrower Imports");
+        imports.MapPost("/validate", ValidateImport).DisableAntiforgery().RequireAuthorization(BorrowerImportPermissions.Import);
+        imports.MapPost("/{batchId:guid}/execute", ExecuteImport).RequireAuthorization(BorrowerImportPermissions.Import);
+        imports.MapGet("/{batchId:guid}", GetImport).RequireAuthorization(BorrowerImportPermissions.Import);
+    }
+
+    private static async Task<IResult> ValidateImport(HttpRequest request, ClaimsPrincipal principal, BorrowerImportService service, IOptions<BorrowerImportOptions> options, CancellationToken ct)
+    {
+        if (!request.HasFormContentType) return Problem(400, "Multipart form data is required", "borrowerImports.invalidFile");
+        try { var form = await request.ReadFormAsync(ct); var file = form.Files.GetFile("file"); if (file is null) return Problem(400, "A workbook is required", "borrowerImports.invalidFile"); await using var stream = file.OpenReadStream(); var result = await service.ValidateAsync(file.FileName, file.ContentType, file.Length, stream, Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), options.Value, ct); return Results.Created($"/api/v1/borrower-imports/{result.BatchId}", result); }
+        catch (BorrowerImportException exception) { return Problem(400, "The borrower workbook is invalid", exception.Code); }
+        catch (InvalidDataException) { return Problem(400, "The borrower workbook is too large", "borrowerImports.invalidFile"); }
+    }
+    private static async Task<IResult> GetImport(Guid batchId, BorrowerImportService service, CancellationToken ct) { var result = await service.GetAsync(batchId, ct); return result is null ? Problem(404, "Import batch not found", "borrowerImports.batchNotFound") : Results.Ok(result); }
+    private static async Task<IResult> ExecuteImport(Guid batchId, BorrowerImportService service, CancellationToken ct)
+    {
+        try { var result = await service.ExecuteAsync(batchId, ct); return result is null ? Problem(404, "Import batch not found", "borrowerImports.batchNotFound") : Results.Ok(result); }
+        catch (BorrowerImportException exception) { return Problem(409, "Import batch cannot be executed", exception.Code); }
     }
 
     private static async Task<IResult> Search(string? civilNumber, string? employeeNumber, string? name, string? organization, BorrowerStatus? status, int? pageNumber, int? pageSize, BorrowerService service, CancellationToken ct)

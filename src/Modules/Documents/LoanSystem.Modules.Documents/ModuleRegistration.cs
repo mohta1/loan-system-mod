@@ -5,6 +5,7 @@ using LoanSystem.Modules.Documents.Application;
 using LoanSystem.Modules.Documents.Infrastructure;
 using LoanSystem.Modules.Documents.Presentation;
 using Microsoft.EntityFrameworkCore;
+using LoanSystem.Contracts;
 
 namespace LoanSystem.Modules.Documents;
 
@@ -22,6 +23,7 @@ public static class ModuleRegistration
         services.AddScoped<IFileStorage, LocalFileStorage>();
         services.AddScoped<IDocumentAccessAuthorizer, UploaderDocumentAccessAuthorizer>();
         services.AddScoped<DocumentService>();
+        services.AddScoped<IImportSourceDocumentStore, ImportSourceDocumentStore>();
         return services;
     }
 
@@ -33,4 +35,10 @@ public static class ModuleRegistration
 
     public static async Task InitializeDocumentsAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     { using var scope = services.CreateScope(); await scope.ServiceProvider.GetRequiredService<DocumentsDbContext>().Database.MigrateAsync(cancellationToken); }
+}
+
+internal sealed class ImportSourceDocumentStore(DocumentService documents) : IImportSourceDocumentStore
+{
+    public async Task<Guid> StoreAsync(string fileName, string contentType, long length, Stream content, Guid uploadedBy, CancellationToken cancellationToken) =>
+        (await documents.UploadAsync(fileName, contentType, length, content, uploadedBy, cancellationToken)).DocumentId;
 }
