@@ -80,7 +80,7 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
     }
 
     [Fact]
-    public async Task Real_sql_unique_indexes_reject_duplicate_identifiers()
+    public async Task Real_sql_unique_indexes_are_translated_to_field_conflicts()
     {
         var suffix = Guid.NewGuid().ToString("N");
         using var scope = fixture.Factory.Services.CreateScope();
@@ -90,13 +90,13 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
         database.ChangeTracker.Clear();
 
         database.Borrowers.Add(Borrower.Register($"civil-a-{suffix}", $"employee-b-{suffix}", "Civil Duplicate", null, "Omani", "MOD", null, null));
-        var civilException = await Assert.ThrowsAsync<DbUpdateException>(() => database.SaveChangesAsync());
-        AssertSqlUniqueViolation(civilException);
+        var civilException = await Assert.ThrowsAsync<LoanSystem.Modules.Borrowers.Application.BorrowerConflictException>(() => database.SaveAsync(default));
+        Assert.Equal("borrowers.civilNumberConflict", civilException.Code);
         database.ChangeTracker.Clear();
 
         database.Borrowers.Add(Borrower.Register($"civil-b-{suffix}", $"employee-a-{suffix}", "Employee Duplicate", null, "Omani", "MOD", null, null));
-        var employeeException = await Assert.ThrowsAsync<DbUpdateException>(() => database.SaveChangesAsync());
-        AssertSqlUniqueViolation(employeeException);
+        var employeeException = await Assert.ThrowsAsync<LoanSystem.Modules.Borrowers.Application.BorrowerConflictException>(() => database.SaveAsync(default));
+        Assert.Equal("borrowers.employeeNumberConflict", employeeException.Code);
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
@@ -202,5 +202,4 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
     private static object Input(string civil, string employee, string name, string organization) => new { civilNumber = civil, employeeNumber = employee, fullName = name, phoneNumber = "90000000", nationality = "Omani", organization, rankGrade = "G7", employmentInformation = "Integration test" };
     private static async Task Login(HttpClient client) => Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/login", new { username = IdentityAccessIntegrationTests.Admin, password = IdentityAccessIntegrationTests.Password })).StatusCode);
     private static async Task<HttpResponseMessage> Send(HttpClient client, HttpMethod method, string path, string etag, object body) { using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(body) }; request.Headers.TryAddWithoutValidation("If-Match", $"\"{etag}\""); return await client.SendAsync(request); }
-    private static void AssertSqlUniqueViolation(DbUpdateException exception) { var sql = Assert.IsType<SqlException>(exception.InnerException); Assert.True(sql.Number is 2601 or 2627); }
 }

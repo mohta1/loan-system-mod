@@ -1,11 +1,15 @@
 using LoanSystem.Modules.Borrowers.Application;
 using LoanSystem.Modules.Borrowers.Domain;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace LoanSystem.Modules.Borrowers.Infrastructure;
 
 public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> options) : DbContext(options), IBorrowerStore
 {
+    private const string CivilNumberIndex = "IX_borrowers_CivilNumber";
+    private const string EmployeeNumberIndex = "IX_borrowers_EmployeeNumber";
+
     public DbSet<Borrower> Borrowers => Set<Borrower>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -14,9 +18,9 @@ public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> opti
         borrower.ToTable("borrowers", "borrowers");
         borrower.HasKey(x => x.Id);
         borrower.Property(x => x.CivilNumber).HasMaxLength(100).IsRequired();
-        borrower.HasIndex(x => x.CivilNumber).IsUnique();
+        borrower.HasIndex(x => x.CivilNumber).IsUnique().HasDatabaseName(CivilNumberIndex);
         borrower.Property(x => x.EmployeeNumber).HasMaxLength(100);
-        borrower.HasIndex(x => x.EmployeeNumber).IsUnique().HasFilter("[EmployeeNumber] IS NOT NULL");
+        borrower.HasIndex(x => x.EmployeeNumber).IsUnique().HasFilter("[EmployeeNumber] IS NOT NULL").HasDatabaseName(EmployeeNumberIndex);
         borrower.Property(x => x.FullName).HasMaxLength(200).IsRequired();
         borrower.HasIndex(x => x.FullName);
         borrower.Property(x => x.PhoneNumber).HasMaxLength(50);
@@ -42,7 +46,24 @@ public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> opti
 
     public void ExpectVersion(Borrower borrower, byte[] version) => Entry(borrower).Property(x => x.RowVersion).OriginalValue = version;
 
-    public Task SaveAsync(CancellationToken ct) => SaveChangesAsync(ct);
+    public async Task SaveAsync(CancellationToken ct)
+    {
+        try
+        {
+            await SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new BorrowerConcurrencyException();
+        }
+        catch (DbUpdateException exception)
+        {
+            var code = DuplicateConflictCode(exception);
+            if (code is null)
+                throw;
+            throw new BorrowerConflictException(code);
+        }
+    }
 
     public async Task<BorrowerPage> SearchAsync(BorrowerSearch search, CancellationToken ct)
     {
@@ -73,5 +94,16 @@ public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> opti
                 x.Status == BorrowerStatus.Active))
             .ToListAsync(ct);
         return new(rows, search.PageNumber, search.PageSize, count);
+    }
+
+    private static string? DuplicateConflictCode(DbUpdateException exception)
+    {
+        if (exception.InnerException is not SqlException { Number: 2601 or 2627 } sqlException)
+            return null;
+        if (sqlException.Message.Contains(EmployeeNumberIndex, StringComparison.Ordinal))
+            return "borrowers.employeeNumberConflict";
+        if (sqlException.Message.Contains(CivilNumberIndex, StringComparison.Ordinal))
+            return "borrowers.civilNumberConflict";
+        return null;
     }
 }

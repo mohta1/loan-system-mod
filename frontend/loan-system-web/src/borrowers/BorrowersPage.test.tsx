@@ -16,6 +16,7 @@ test('renders, searches, paginates, and opens details with permission-aware cont
   const fetch = api(); show(); expect(await screen.findByText('Ali Borrower')).toBeInTheDocument();
   await userEvent.type(screen.getByLabelText('Name'), 'Ali'); await userEvent.selectOptions(screen.getByLabelText('Status'), 'Active'); await userEvent.click(screen.getByRole('button', { name: 'Search' }));
   await waitFor(() => expect(String(fetch.mock.calls.at(-1)?.[0])).toContain('name=Ali'));
+  const searches = fetch.mock.calls.length; await userEvent.click(screen.getByRole('button', { name: 'Search' })); await waitFor(() => expect(fetch.mock.calls.length).toBeGreaterThan(searches));
   await userEvent.click(screen.getByRole('button', { name: 'Next' })); await waitFor(() => expect(String(fetch.mock.calls.at(-1)?.[0])).toContain('pageNumber=2'));
   await userEvent.click(screen.getByText('Ali Borrower')); expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Deactivate' })).toBeInTheDocument();
 });

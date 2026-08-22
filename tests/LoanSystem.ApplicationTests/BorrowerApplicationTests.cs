@@ -1,6 +1,5 @@
 using LoanSystem.Modules.Borrowers.Application;
 using LoanSystem.Modules.Borrowers.Domain;
-using Microsoft.EntityFrameworkCore;
 
 namespace LoanSystem.ApplicationTests;
 
@@ -63,10 +62,11 @@ public sealed class BorrowerApplicationTests
     }
 
     [Fact]
-    public async Task Concurrency_is_translated()
+    public async Task Provider_neutral_store_failures_are_preserved()
     {
-        var store = new Store { SaveError = new DbUpdateConcurrencyException() };
-        await Assert.ThrowsAsync<BorrowerConcurrencyException>(() => new BorrowerService(store).RegisterAsync(Valid, default));
+        var error = new BorrowerConcurrencyException();
+        var store = new Store { SaveError = error };
+        Assert.Same(error, await Assert.ThrowsAsync<BorrowerConcurrencyException>(() => new BorrowerService(store).RegisterAsync(Valid, default)));
     }
 
     private sealed class Store : IBorrowerStore

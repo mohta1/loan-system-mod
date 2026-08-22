@@ -58,6 +58,19 @@ public sealed class ArchitectureRulesTests
     }
 
     [Fact]
+    public void Borrowers_application_does_not_reference_database_providers()
+    {
+        var definitions = ReadModule(typeof(Modules.Borrowers.ModuleMarker).Assembly)
+            .MainModule.Types.SelectMany(Flatten)
+            .Where(type => type.Namespace.EndsWith(".Application", StringComparison.Ordinal));
+
+        Assert.All(definitions, type => Assert.DoesNotContain(
+            ReferencedTypeNames(type),
+            reference => reference.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+                || reference.StartsWith("Microsoft.Data.SqlClient", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Transactional_modules_do_not_depend_on_reporting()
     {
         var reportingName = typeof(Modules.Reporting.ModuleMarker).Assembly.GetName().Name;
