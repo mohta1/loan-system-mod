@@ -2,7 +2,7 @@ using LoanSystem.Modules.Documents.Domain;
 using Microsoft.Extensions.Options;
 namespace LoanSystem.Modules.Documents.Application;
 
-public sealed class FileStorageOptions { public string RootPath { get; set; } = "data/files"; public long MaximumFileSizeBytes { get; set; } = 5 * 1024 * 1024; public string[] AllowedContentTypes { get; set; } = ["application/pdf", "image/png", "image/jpeg", "text/plain"]; }
+public sealed class FileStorageOptions { public string RootPath { get; set; } = "data/files"; public long MaximumFileSizeBytes { get; set; } = 5 * 1024 * 1024; public string[] AllowedContentTypes { get; set; } = ["application/pdf", "image/png", "image/jpeg", "text/plain", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]; }
 public interface IFileStorage { Task StoreAsync(string key, Stream content, CancellationToken ct); Task<Stream?> OpenReadAsync(string key, CancellationToken ct); Task DeleteAsync(string key, CancellationToken ct); }
 public interface IDocumentRepository { Task AddAsync(Document document, CancellationToken ct); Task<Document?> FindAsync(Guid id, CancellationToken ct); void Remove(Document document); Task SaveAsync(CancellationToken ct); }
 public interface IDocumentAccessAuthorizer { bool CanAccess(Guid uploaderId, Guid currentUserId); }
