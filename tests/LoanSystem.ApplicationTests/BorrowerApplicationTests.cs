@@ -20,8 +20,8 @@ public sealed class BorrowerApplicationTests
         var updated = await service.UpdateAsync(created.BorrowerId, Valid with { FullName = "Changed" }, [1], default);
         Assert.Equal("Changed", updated!.FullName);
         Assert.Equal([1], store.Version);
-        Assert.Equal(BorrowerStatus.Inactive, (await service.StatusAsync(created.BorrowerId, false, [2], default))!.Status);
-        Assert.Equal(BorrowerStatus.Active, (await service.StatusAsync(created.BorrowerId, true, [3], default))!.Status);
+        Assert.Equal("Inactive", (await service.StatusAsync(created.BorrowerId, false, [2], default))!.Status);
+        Assert.Equal("Active", (await service.StatusAsync(created.BorrowerId, true, [3], default))!.Status);
     }
 
     [Fact]

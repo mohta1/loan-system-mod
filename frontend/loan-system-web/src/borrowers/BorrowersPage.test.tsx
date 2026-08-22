@@ -38,3 +38,22 @@ test('edits with initially disabled Save and deactivates then activates', async 
 test('hides mutation controls for read-only users and translates Arabic', async () => {
   api(); show(['borrowers.read']); await userEvent.click(await screen.findByText('Ali Borrower')); expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Deactivate' })).not.toBeInTheDocument(); applyLanguage('ar'); await waitFor(() => expect(i18n.language).toBe('ar')); expect(document.documentElement.dir).toBe('rtl');
 });
+
+test.each([{ status: 403, text: 'do not have permission' }, { status: 500, text: 'operation failed' }])('shows list error UX for $status', async ({ status, text }) => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({}), { status, headers: { 'Content-Type': 'application/json' } }));
+  show();
+  expect(await screen.findByRole('alert')).toHaveTextContent(text);
+});
+
+test('shows stale update concurrency message', async () => {
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(Response.json({ items: [borrower], pageNumber: 1, pageSize: 25, totalCount: 1 }))
+    .mockResolvedValueOnce(Response.json({ errorCode: 'borrowers.concurrencyConflict' }, { status: 412 }));
+  show();
+  await userEvent.click(await screen.findByText('Ali Borrower'));
+  await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  await userEvent.clear(screen.getByLabelText(/Full Name/));
+  await userEvent.type(screen.getByLabelText(/Full Name/), 'Concurrent Change');
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('changed by another user');
+});

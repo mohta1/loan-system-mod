@@ -22,7 +22,10 @@ test('updates and changes status using the ETag', async () => {
   await borrowersApi.update(borrower, { ...input, fullName: 'Changed' });
   await borrowersApi.status(borrower, false);
   await borrowersApi.status({ ...borrower, status: 'Inactive' }, true);
-  expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'PUT', headers: { 'If-Match': '"AQID"' } });
+  expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'PUT', credentials: 'same-origin' });
+  const updateHeaders = new Headers(fetch.mock.calls[0][1]?.headers);
+  expect(updateHeaders.get('Content-Type')).toBe('application/json');
+  expect(updateHeaders.get('If-Match')).toBe('"AQID"');
   expect(fetch.mock.calls[1][0]).toContain('/deactivate');
   expect(fetch.mock.calls[2][0]).toContain('/activate');
 });
