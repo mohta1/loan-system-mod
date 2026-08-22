@@ -110,7 +110,7 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
         Assert.Equal(HttpStatusCode.Created, seededResponse.StatusCode);
         var seeded = JsonDocument.Parse(await seededResponse.Content.ReadAsStringAsync()).RootElement;
         var borrowerId = seeded.GetProperty("borrowerId").GetGuid();
-        var etag = seeded.GetProperty("eTag").GetString()!;
+        var etag = await FreshEtag(admin, borrowerId);
 
         var read = await PermissionClient(admin, $"read-{suffix}", "borrowers.read");
         Assert.Equal(HttpStatusCode.OK, (await read.GetAsync("/api/v1/borrowers")).StatusCode);
@@ -127,15 +127,16 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
         var update = await PermissionClient(admin, $"update-{suffix}", "borrowers.update");
         var updatedResponse = await Send(update, HttpMethod.Put, $"/api/v1/borrowers/{borrowerId}", etag, Input($"policy-civil-{suffix}", $"policy-employee-{suffix}", "Permission Updated", "MOD"));
         Assert.Equal(HttpStatusCode.OK, updatedResponse.StatusCode);
-        etag = JsonDocument.Parse(await updatedResponse.Content.ReadAsStringAsync()).RootElement.GetProperty("eTag").GetString()!;
+        etag = await FreshEtag(admin, borrowerId);
         Assert.Equal(HttpStatusCode.Forbidden, (await update.PostAsJsonAsync("/api/v1/borrowers", Input($"update-civil-{suffix}", $"update-employee-{suffix}", "Denied", "MOD"))).StatusCode);
 
         var status = await PermissionClient(admin, $"status-{suffix}", "borrowers.manageStatus");
         var deactivated = await Send(status, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/deactivate", etag, new { });
         Assert.Equal(HttpStatusCode.OK, deactivated.StatusCode);
-        etag = JsonDocument.Parse(await deactivated.Content.ReadAsStringAsync()).RootElement.GetProperty("eTag").GetString()!;
+        etag = await FreshEtag(admin, borrowerId);
         var activated = await Send(status, HttpMethod.Post, $"/api/v1/borrowers/{borrowerId}/activate", etag, new { });
         Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+        Assert.False(string.IsNullOrWhiteSpace(await FreshEtag(admin, borrowerId)));
         Assert.Equal(HttpStatusCode.Forbidden, (await status.GetAsync($"/api/v1/borrowers/{borrowerId}")).StatusCode);
     }
 
@@ -162,6 +163,13 @@ public sealed class BorrowersIntegrationTests(IdentitySqlFixture fixture)
         var client = fixture.Factory.CreateClient(new() { HandleCookies = true });
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/login", new { username, password })).StatusCode);
         return client;
+    }
+
+    private static async Task<string> FreshEtag(HttpClient reader, Guid borrowerId)
+    {
+        var response = await reader.GetAsync($"/api/v1/borrowers/{borrowerId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return response.Headers.ETag?.Tag.Trim('"') ?? throw new InvalidOperationException("Borrower detail response did not include an ETag.");
     }
 
     private static object Input(string civil, string employee, string name, string organization) => new { civilNumber = civil, employeeNumber = employee, fullName = name, phoneNumber = "90000000", nationality = "Omani", organization, rankGrade = "G7", employmentInformation = "Integration test" };
