@@ -14,6 +14,7 @@ namespace LoanSystem.Modules.LoanProducts.Infrastructure;
 public sealed class LoanProductsDbContext(DbContextOptions<LoanProductsDbContext> options) : DbContext(options), ILoanProductStore
 {
     private const string VersionNumberIndex = "IX_versions_product_number";
+    private IDbContextTransaction? ownedTransaction;
 
     public DbSet<LoanProduct> Products => Set<LoanProduct>();
     public DbSet<LoanProductVersion> Versions => Set<LoanProductVersion>();
@@ -70,8 +71,7 @@ public sealed class LoanProductsDbContext(DbContextOptions<LoanProductsDbContext
 
     public async Task<int> NextVersionNumberAsync(Guid productId, CancellationToken ct)
     {
-        if (Database.CurrentTransaction is null)
-            await Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await BeginOwnedTransactionAsync(ct);
 
         var connection = (SqlConnection)Database.GetDbConnection();
         await using var command = connection.CreateCommand();
@@ -84,8 +84,7 @@ public sealed class LoanProductsDbContext(DbContextOptions<LoanProductsDbContext
 
     public async Task LockProductAsync(Guid productId, CancellationToken ct)
     {
-        if (Database.CurrentTransaction is null)
-            await Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await BeginOwnedTransactionAsync(ct);
 
         var connection = (SqlConnection)Database.GetDbConnection();
         await using var command = connection.CreateCommand();
@@ -117,11 +116,13 @@ public sealed class LoanProductsDbContext(DbContextOptions<LoanProductsDbContext
 
     public async Task SaveAsync(CancellationToken ct)
     {
+        var committed = false;
         try
         {
             await SaveChangesAsync(ct);
-            if (Database.CurrentTransaction is not null)
-                await Database.CommitTransactionAsync(ct);
+            if (ownedTransaction is not null)
+                await ownedTransaction.CommitAsync(ct);
+            committed = true;
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -132,6 +133,36 @@ public sealed class LoanProductsDbContext(DbContextOptions<LoanProductsDbContext
         {
             throw new LoanProductVersionConflictException();
         }
+        finally
+        {
+            if (ownedTransaction is not null)
+            {
+                if (!committed)
+                {
+                    try { await ownedTransaction.RollbackAsync(CancellationToken.None); }
+                    catch (InvalidOperationException) when (ownedTransaction.GetDbTransaction().Connection is null) { }
+                }
+                await ownedTransaction.DisposeAsync();
+                ownedTransaction = null;
+            }
+        }
+    }
+
+    public async Task RollbackAsync(CancellationToken ct)
+    {
+        if (ownedTransaction is null) return;
+        try { await ownedTransaction.RollbackAsync(ct); }
+        finally
+        {
+            await ownedTransaction.DisposeAsync();
+            ownedTransaction = null;
+        }
+    }
+
+    private async Task BeginOwnedTransactionAsync(CancellationToken ct)
+    {
+        if (Database.CurrentTransaction is not null) return;
+        ownedTransaction = await Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
     }
 }
 

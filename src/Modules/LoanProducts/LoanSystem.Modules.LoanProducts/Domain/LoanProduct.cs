@@ -9,7 +9,7 @@ public sealed class EligibilityConfiguration
 {
     private readonly RankGradeAmountRule[] rankGradeAmountRules;
 
-    public EligibilityConfiguration(string requiredNationality, int maximumApplicationCount, IEnumerable<RankGradeAmountRule> rankGradeAmountRules, TermConfiguration term)
+    public EligibilityConfiguration(string requiredNationality, int maximumApplicationCount, IReadOnlyList<RankGradeAmountRule> rankGradeAmountRules, TermConfiguration term)
     {
         RequiredNationality = requiredNationality;
         MaximumApplicationCount = maximumApplicationCount;

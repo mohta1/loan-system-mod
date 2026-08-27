@@ -28,6 +28,9 @@ test('TASK-05 versioned loan product remains immutable and availability follows 
   await page.getByRole('button', { name: 'Add Rank / Grade Rule' }).click();
   await page.getByLabel('Rank / Grade').nth(1).fill('Configured E2E grade B');
   await page.getByLabel('Rank / Grade Maximum Amount').nth(1).fill('90000');
+  await page.getByRole('button', { name: 'Add Rank / Grade Rule' }).click();
+  await page.getByLabel('Rank / Grade').nth(2).fill('Configured E2E grade C');
+  await page.getByLabel('Rank / Grade Maximum Amount').nth(2).fill('80000');
   await page.getByLabel('Maximum Term (months)').fill('120');
   await page.getByLabel('Due-Date Rule').fill('Configured E2E due-date rule');
   await expect(page.getByRole('button', { name: 'Purchase Existing House ×' })).toBeVisible();
@@ -42,6 +45,7 @@ test('TASK-05 versioned loan product remains immutable and availability follows 
   await expect(page.getByText('Configured E2E nationality')).toBeVisible();
   await expect(page.getByText(/Configured E2E grade A — 100000/)).toBeVisible();
   await expect(page.getByText(/Configured E2E grade B — 90000/)).toBeVisible();
+  await expect(page.getByText(/Configured E2E grade C — 80000/)).toBeVisible();
   await page.getByRole('button', { name: 'Publish' }).click();
   await expect(page.getByText('Published')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit Draft Version' })).toHaveCount(0);

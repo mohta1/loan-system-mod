@@ -4,6 +4,7 @@ using System.Text.Json;
 using LoanSystem.Contracts;
 using LoanSystem.Modules.IdentityAccess.Domain;
 using LoanSystem.Modules.IdentityAccess.Infrastructure;
+using LoanSystem.Modules.LoanProducts.Application;
 using LoanSystem.Modules.LoanProducts.Infrastructure;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,71 @@ namespace LoanSystem.IntegrationTests;
 [Collection(IdentitySqlTestGroup.Name)]
 public sealed class LoanProductsIntegrationTests(IdentitySqlFixture fixture)
 {
+    [Fact]
+    public async Task Create_draft_persists_complete_aggregate_in_a_fresh_scope()
+    {
+        using var client = fixture.Factory.CreateClient(new() { HandleCookies = true });
+        await Login(client);
+        var productId = (await CreateProduct(client)).GetProperty("loanProductId").GetGuid();
+        var input = new
+        {
+            maximumAmount = 30000m,
+            currency = "OMR",
+            deductionPercentage = 25.5m,
+            financingTypes = new[] { "Purchase Existing House", "Build New House" },
+            eligibilityConfiguration = new
+            {
+                requiredNationality = "Configured nationality",
+                maximumApplicationCount = 2,
+                rankGradeAmountRules = new[] { new { rankGrade = "Grade A", maximumAmount = 10000m }, new { rankGrade = "Grade B", maximumAmount = 20000m } },
+                term = new { maximumTermMonths = 120, dueDateRule = "Configured term rule" }
+            },
+            effectiveFrom = new DateOnly(2035, 1, 1),
+            effectiveTo = (DateOnly?)null
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/v1/loan-products/{productId}/versions", input);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await Read(response);
+        Assert.Equal(1, created.GetProperty("versionNumber").GetInt32());
+        Assert.False(string.IsNullOrWhiteSpace(created.GetProperty("eTag").GetString()));
+
+        using var scope = fixture.Factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<LoanProductsDbContext>();
+        var persisted = await database.Versions.AsNoTracking().Include(value => value.FinancingTypes)
+            .SingleAsync(value => value.Id == created.GetProperty("versionId").GetGuid());
+        Assert.Equal(productId, persisted.LoanProductId);
+        Assert.Equal(LoanSystem.Modules.LoanProducts.Domain.LoanProductVersionStatus.Draft, persisted.Status);
+        Assert.NotEmpty(persisted.RowVersion);
+        Assert.Equal(["Build New House", "Purchase Existing House"], persisted.FinancingTypes.Select(value => value.Value).Order().ToArray());
+        Assert.Equal("Configured nationality", persisted.EligibilityConfiguration.RequiredNationality);
+        Assert.Equal(2, persisted.EligibilityConfiguration.MaximumApplicationCount);
+        Assert.Equal(["Grade A", "Grade B"], persisted.EligibilityConfiguration.RankGradeAmountRules.Select(value => value.RankGrade).ToArray());
+        Assert.Equal(120, persisted.EligibilityConfiguration.Term.MaximumTermMonths);
+        Assert.Equal("Configured term rule", persisted.EligibilityConfiguration.Term.DueDateRule);
+    }
+
+    [Fact]
+    public async Task Failed_draft_validation_rolls_back_owned_transaction_before_next_operation()
+    {
+        using var client = fixture.Factory.CreateClient(new() { HandleCookies = true });
+        await Login(client);
+        var productId = (await CreateProduct(client)).GetProperty("loanProductId").GetGuid();
+        using var scope = fixture.Factory.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<LoanProductService>();
+        var database = scope.ServiceProvider.GetRequiredService<LoanProductsDbContext>();
+        var eligibility = new EligibilityInput("Configured nationality", 2, [new("Grade A", 5000)], new(120, "Configured term rule"));
+        var invalid = new VersionInput(0, "OMR", 25, ["Configured type"], eligibility, new(2036, 1, 1), null);
+        await Assert.ThrowsAsync<LoanSystem.Modules.LoanProducts.Domain.LoanProductValidationException>(() => service.CreateDraftAsync(productId, invalid, default));
+        Assert.Null(database.Database.CurrentTransaction);
+
+        var valid = invalid with { MaximumAmount = 10000 };
+        var created = await service.CreateDraftAsync(productId, valid, default);
+        Assert.NotNull(created);
+        Assert.Equal(1, created.VersionNumber);
+        Assert.Null(database.Database.CurrentTransaction);
+    }
+
     [Fact]
     public async Task Real_sql_lifecycle_immutability_overlap_availability_and_contract()
     {
@@ -149,6 +215,20 @@ public sealed class LoanProductsIntegrationTests(IdentitySqlFixture fixture)
                 OR (fk.name = 'FK_financing_types_versions' AND child.name = 'loan_product_financing_types' AND child_column.name = 'version_id' AND principal.name = 'loan_product_versions' AND principal_column.name = 'version_id' AND fk.delete_referential_action = 1))
             """;
         Assert.Equal(2, Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
+        command.CommandText = """
+            SELECT
+              (SELECT COUNT(*) FROM sys.indexes i JOIN sys.tables t ON t.object_id=i.object_id JOIN sys.schemas s ON s.schema_id=t.schema_id WHERE s.name='loan_products' AND t.name='loan_product_versions' AND i.name='IX_versions_product_number' AND i.is_unique=1
+                AND (SELECT COUNT(*) FROM sys.index_columns ic WHERE ic.object_id=i.object_id AND ic.index_id=i.index_id AND ic.is_included_column=0)=2
+                AND EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id=ic.object_id AND c.column_id=ic.column_id WHERE ic.object_id=i.object_id AND ic.index_id=i.index_id AND ic.key_ordinal=1 AND c.name='loan_product_id')
+                AND EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id=ic.object_id AND c.column_id=ic.column_id WHERE ic.object_id=i.object_id AND ic.index_id=i.index_id AND ic.key_ordinal=2 AND c.name='version_number')),
+              (SELECT COUNT(*) FROM sys.columns c JOIN sys.tables t ON t.object_id=c.object_id JOIN sys.schemas s ON s.schema_id=t.schema_id WHERE s.name='loan_products' AND c.name='row_version' AND c.system_type_id=189 AND t.name IN ('loan_products','loan_product_versions')),
+              (SELECT COUNT(*) FROM sys.columns c JOIN sys.types ty ON ty.user_type_id=c.user_type_id JOIN sys.tables t ON t.object_id=c.object_id JOIN sys.schemas s ON s.schema_id=t.schema_id WHERE s.name='loan_products' AND t.name='loan_product_versions' AND ((c.name='maximum_amount' AND ty.name='decimal' AND c.precision=19 AND c.scale=4) OR (c.name='deduction_percentage' AND ty.name='decimal' AND c.precision=9 AND c.scale=4)))
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1, reader.GetInt32(0));
+        Assert.Equal(2, reader.GetInt32(1));
+        Assert.Equal(2, reader.GetInt32(2));
     }
 
     [Fact]
