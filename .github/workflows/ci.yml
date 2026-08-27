@@ -47,6 +47,9 @@ jobs:
       - name: Rerun TASK-04 borrower import against persistent runtime
         working-directory: frontend/loan-system-web
         run: npx playwright test e2e/borrower-import.spec.ts
+      - name: Rerun TASK-05 loan products against persistent runtime
+        working-directory: frontend/loan-system-web
+        run: npx playwright test e2e/loan-products.spec.ts
       - if: always()
         name: Capture Docker health diagnostics
         run: |
