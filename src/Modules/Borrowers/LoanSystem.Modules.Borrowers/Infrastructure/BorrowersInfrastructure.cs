@@ -11,6 +11,8 @@ public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> opti
     private const string EmployeeNumberIndex = "IX_borrowers_EmployeeNumber";
 
     public DbSet<Borrower> Borrowers => Set<Borrower>();
+    public DbSet<BorrowerImportBatch> ImportBatches => Set<BorrowerImportBatch>();
+    public DbSet<BorrowerImportRow> ImportRows => Set<BorrowerImportRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +34,8 @@ public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> opti
         borrower.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
         borrower.HasIndex(x => x.Status);
         borrower.Property(x => x.RowVersion).IsRowVersion();
+        var batch = modelBuilder.Entity<BorrowerImportBatch>(); batch.ToTable("import_batches", "borrowers"); batch.HasKey(x => x.BatchId); batch.Property(x => x.Status).HasMaxLength(20); batch.Property(x => x.IdempotencyKey).HasMaxLength(32); batch.HasIndex(x => x.IdempotencyKey).IsUnique(); batch.HasIndex(x => x.Status); batch.Property(x => x.RowVersion).IsRowVersion();
+        var row = modelBuilder.Entity<BorrowerImportRow>(); row.ToTable("import_rows", "borrowers"); row.HasKey(x => new { x.BatchId, x.RowNumber }); row.Property(x => x.RawPayload).HasColumnType("nvarchar(max)"); row.Property(x => x.Status).HasMaxLength(20); row.Property(x => x.ErrorCode).HasMaxLength(1000); row.Property(x => x.ErrorMessage).HasMaxLength(1000); row.HasOne(x => x.Batch).WithMany(x => x.Rows).HasForeignKey(x => x.BatchId).OnDelete(DeleteBehavior.Cascade);
     }
 
     public Task<bool> CivilExistsAsync(string value, Guid? except, CancellationToken ct) =>
