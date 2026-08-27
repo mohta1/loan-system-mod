@@ -48,7 +48,13 @@ public sealed class LoanProductsInitial : Migration
             constraints: table =>
             {
                 table.PrimaryKey("PK_loan_product_versions", x => x.version_id);
-                table.ForeignKey("FK_versions_products", x => x.loan_product_id, "loan_products", "loan_products", "loan_product_id", onDelete: ReferentialAction.Restrict);
+                table.ForeignKey(
+                    name: "FK_versions_products",
+                    column: x => x.loan_product_id,
+                    principalSchema: "loan_products",
+                    principalTable: "loan_products",
+                    principalColumn: "loan_product_id",
+                    onDelete: ReferentialAction.Restrict);
             });
         migrationBuilder.CreateIndex("IX_versions_product_number", "loan_product_versions", ["loan_product_id", "version_number"], "loan_products", unique: true);
         migrationBuilder.CreateTable(
@@ -62,7 +68,13 @@ public sealed class LoanProductsInitial : Migration
             constraints: table =>
             {
                 table.PrimaryKey("PK_loan_product_financing_types", x => new { x.version_id, x.financing_type });
-                table.ForeignKey("FK_financing_types_versions", x => x.version_id, "loan_products", "loan_product_versions", "version_id", onDelete: ReferentialAction.Cascade);
+                table.ForeignKey(
+                    name: "FK_financing_types_versions",
+                    column: x => x.version_id,
+                    principalSchema: "loan_products",
+                    principalTable: "loan_product_versions",
+                    principalColumn: "version_id",
+                    onDelete: ReferentialAction.Cascade);
             });
     }
 

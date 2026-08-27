@@ -3,3 +3,4 @@
 .filters,.borrower-form{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:1rem 0}.borrower-form footer{grid-column:1/-1}.pagination{display:flex;justify-content:center;gap:1rem;margin-top:1rem}tbody tr{cursor:pointer}dl{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem}
 .borrower-import{overflow:auto}.borrower-import>label{max-width:520px}.import-summary{display:flex;flex-wrap:wrap;gap:1rem;margin:1.25rem 0;padding:1rem;background:#eef7fa;border-radius:8px}.borrower-import>button{margin-top:1rem}
 .product-version{border:1px solid #d8e1e8;border-radius:10px;padding:1rem;margin-top:1rem}.product-version button{margin-inline-end:.5rem}.product-form fieldset{border:1px solid #d8e1e8;border-radius:8px;padding:1rem}.product-form fieldset input{margin:.5rem}
+.rank-rule{display:grid;grid-template-columns:1fr 1fr auto;gap:.75rem;align-items:end;margin:.75rem 0}

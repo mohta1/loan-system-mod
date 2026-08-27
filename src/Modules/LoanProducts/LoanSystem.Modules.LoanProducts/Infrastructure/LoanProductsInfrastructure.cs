@@ -96,6 +96,13 @@ public sealed class LoanProductsDbContext(DbContextOptions<LoanProductsDbContext
             throw new InvalidOperationException("The loan product disappeared during publication.");
     }
 
+    public async Task EnsureVersionAsync(LoanProductVersion version, byte[] expected, CancellationToken ct)
+    {
+        var current = await Versions.AsNoTracking().Where(value => value.Id == version.Id).Select(value => value.RowVersion).SingleAsync(ct);
+        if (!current.AsSpan().SequenceEqual(expected))
+            throw new LoanProductConcurrencyException();
+    }
+
     public Task<bool> OverlapsAsync(Guid productId, Guid except, DateOnly effectiveFrom, DateOnly? effectiveTo, CancellationToken ct) => Versions.AnyAsync(
         version => version.LoanProductId == productId
             && version.Id != except
@@ -141,6 +148,7 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<LoanProduc
         builder.Property(product => product.UpdatedAtUtc).HasColumnName("updated_at_utc");
         builder.Property(product => product.RowVersion).HasColumnName("row_version").IsRowVersion();
         builder.HasMany(product => product.Versions).WithOne().HasForeignKey(version => version.LoanProductId).OnDelete(DeleteBehavior.Restrict);
+        builder.Navigation(product => product.Versions).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }
 
@@ -173,6 +181,7 @@ internal sealed class VersionConfiguration : IEntityTypeConfiguration<LoanProduc
         builder.Property(version => version.PublishedAtUtc).HasColumnName("published_at_utc");
         builder.Property(version => version.CreatedAtUtc).HasColumnName("created_at_utc");
         builder.Property(version => version.RowVersion).HasColumnName("row_version").IsRowVersion();
+        builder.Navigation(version => version.FinancingTypes).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 
     internal static string SerializeEligibility(EligibilityConfiguration value) => JsonSerializer.Serialize(value, JsonOptions);
