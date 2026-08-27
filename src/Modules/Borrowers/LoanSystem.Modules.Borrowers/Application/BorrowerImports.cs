@@ -10,11 +10,12 @@ public static class BorrowerImportTemplate
     public static readonly string[] Columns = ["Civil Number", "Full Name", "Nationality", "Organization", "Employee Number", "Phone Number", "Rank / Grade", "Employment Information"];
     public const int RequiredColumns = 4;
 }
-public sealed class BorrowerImportOptions { public long MaximumFileSizeBytes { get; set; } = 5 * 1024 * 1024; public int MaximumRows { get; set; } = 5000; }
+public sealed class BorrowerImportOptions { public long MaximumFileSizeBytes { get; set; } = 5 * 1024 * 1024; public int MaximumRows { get; set; } = 5000; public int ExecutionLockTimeoutMilliseconds { get; set; } = 15000; }
 public sealed record ParsedBorrowerRow(int RowNumber, BorrowerInput Input, IReadOnlyList<string> Errors);
 public sealed record BorrowerImportRowDto(int RowNumber, string Status, string CivilNumber, string? EmployeeNumber, IReadOnlyList<string> ErrorCodes, Guid? BorrowerId);
 public sealed record BorrowerImportDto(Guid BatchId, Guid SourceDocumentId, string Status, int TotalRows, int ValidRows, int InvalidRows, int ImportedRows, int FailedRows, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc, IReadOnlyList<BorrowerImportRowDto> Rows);
 public sealed class BorrowerImportException(string code) : Exception(code) { public string Code { get; } = code; }
+public sealed class BorrowerImportExecutionBusyException : Exception;
 public interface IBorrowerWorkbookParser { IReadOnlyList<ParsedBorrowerRow> Parse(Stream workbook, int maximumRows); }
 public interface IBorrowerImportStore
 {
@@ -42,7 +43,12 @@ public sealed class BorrowerImportService(IBorrowerWorkbookParser parser, IBorro
         var existingEmployee = await store.ExistingEmployeeNumbersAsync(rows.Where(x => x.Input.EmployeeNumber is not null).Select(x => x.Input.EmployeeNumber!), ct);
         rows = rows.Select(row => AddErrors(row, civilDuplicates, employeeDuplicates, existingCivil, existingEmployee)).ToArray();
         buffer.Position = 0; var documentId = await documents.StoreAsync(Path.GetFileName(fileName), ContentType, length, buffer, userId, ct);
-        return await store.CreateAsync(documentId, userId, rows, ct);
+        try { return await store.CreateAsync(documentId, userId, rows, ct); }
+        catch
+        {
+            await documents.DiscardAsync(documentId, userId, CancellationToken.None);
+            throw;
+        }
     }
     public Task<BorrowerImportDto?> GetAsync(Guid id, CancellationToken ct) => store.GetAsync(id, ct);
     public Task<BorrowerImportDto?> ExecuteAsync(Guid id, CancellationToken ct) => store.ExecuteAsync(id, ct);

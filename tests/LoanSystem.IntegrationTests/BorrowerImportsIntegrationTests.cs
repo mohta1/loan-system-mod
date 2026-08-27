@@ -6,8 +6,11 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using LoanSystem.Modules.Borrowers.Infrastructure;
+using LoanSystem.Modules.Borrowers.Application;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace LoanSystem.IntegrationTests;
 
@@ -61,6 +64,32 @@ public sealed class BorrowerImportsIntegrationTests(IdentitySqlFixture fixture)
         var concurrentCivil = $"concurrent-{suffix}"; var concurrent = await Validate(client, Workbook([concurrentCivil, "Concurrent", "Omani", "External", $"concurrent-employee-{suffix}"])); var id = concurrent.GetProperty("batchId").GetGuid();
         using var firstClient = await AdminClient(); using var secondClient = await AdminClient(); var results = await Task.WhenAll(firstClient.PostAsync($"/api/v1/borrower-imports/{id}/execute", null), secondClient.PostAsync($"/api/v1/borrower-imports/{id}/execute", null)); Assert.All(results, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
         using var scope = fixture.Factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<BorrowersDbContext>(); Assert.Equal(1, await db.Borrowers.CountAsync(x => x.CivilNumber == concurrentCivil)); Assert.Equal("Completed", (await db.ImportBatches.SingleAsync(x => x.BatchId == id)).Status);
+    }
+
+    [Fact]
+    public async Task Execute_does_not_process_without_application_lock_and_remains_retryable()
+    {
+        var suffix = Guid.NewGuid().ToString("N"); var civil = $"locked-{suffix}"; using var client = await AdminClient(); var preview = await Validate(client, Workbook([civil, "Locked", "Omani", "External", $"locked-employee-{suffix}"])); var id = preview.GetProperty("batchId").GetGuid();
+        var options = fixture.Factory.Services.GetRequiredService<IOptions<BorrowerImportOptions>>().Value; var originalTimeout = options.ExecutionLockTimeoutMilliseconds; options.ExecutionLockTimeoutMilliseconds = 100;
+        await using var connection = new SqlConnection(fixture.ConnectionString); await connection.OpenAsync(); await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+        await using (var command = connection.CreateCommand()) { command.Transaction = transaction; command.CommandText = "DECLARE @result int; EXEC @result = sys.sp_getapplock @Resource = @resource, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 0; SELECT @result;"; command.Parameters.AddWithValue("@resource", $"borrower-import:{id}"); Assert.True(Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) >= 0); }
+        try
+        {
+            var blocked = await client.PostAsync($"/api/v1/borrower-imports/{id}/execute", null); AssertProblem(blocked, HttpStatusCode.Conflict, "borrowerImports.executionBusy");
+            using var scope = fixture.Factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<BorrowersDbContext>(); Assert.False(await db.Borrowers.AnyAsync(x => x.CivilNumber == civil)); var batch = await db.ImportBatches.Include(x => x.Rows).SingleAsync(x => x.BatchId == id); Assert.Equal("Validated", batch.Status); Assert.Equal("Valid", Assert.Single(batch.Rows).Status);
+        }
+        finally { options.ExecutionLockTimeoutMilliseconds = originalTimeout; await transaction.RollbackAsync(); }
+        var completed = await Execute(client, id); Assert.Equal(1, completed.GetProperty("importedRows").GetInt32()); using var verification = fixture.Factory.Services.CreateScope(); Assert.Equal(1, await verification.ServiceProvider.GetRequiredService<BorrowersDbContext>().Borrowers.CountAsync(x => x.CivilNumber == civil));
+    }
+
+    [Fact]
+    public async Task Execute_continues_after_first_row_conflict_and_completed_retry_is_stable()
+    {
+        var suffix = Guid.NewGuid().ToString("N"); var conflict = $"continue-conflict-{suffix}"; var valid = $"continue-valid-{suffix}"; using var client = await AdminClient();
+        var preview = await Validate(client, Workbook([conflict, "Conflict", "Omani", "External", $"conflict-employee-{suffix}"], [valid, "Valid", "Omani", "External", $"valid-employee-{suffix}"])); var id = preview.GetProperty("batchId").GetGuid();
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync("/api/v1/borrowers", Input(conflict, $"outside-employee-{suffix}"))).StatusCode);
+        var first = await Execute(client, id); Assert.Equal(1, first.GetProperty("importedRows").GetInt32()); Assert.Equal(1, first.GetProperty("failedRows").GetInt32()); var rows = first.GetProperty("rows").EnumerateArray().ToArray(); Assert.Equal("Failed", rows[0].GetProperty("status").GetString()); Assert.Equal("borrowers.civilNumberConflict", rows[0].GetProperty("errorCodes")[0].GetString()); Assert.Equal("Imported", rows[1].GetProperty("status").GetString()); var importedId = rows[1].GetProperty("borrowerId").GetGuid();
+        var retry = await Execute(client, id); Assert.Equal(importedId, retry.GetProperty("rows")[1].GetProperty("borrowerId").GetGuid()); using var scope = fixture.Factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<BorrowersDbContext>(); Assert.Equal(1, await db.Borrowers.CountAsync(x => x.CivilNumber == valid)); Assert.Equal(1, await db.Borrowers.CountAsync(x => x.CivilNumber == conflict));
     }
 
     [Fact]

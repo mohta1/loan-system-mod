@@ -31,3 +31,7 @@ test.each([{ status: 400, code: 'borrowerImports.invalidTemplate', text: 'does n
 test('shows localized execute failure and Arabic RTL resources', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(json(preview, 201)).mockResolvedValueOnce(json({ errorCode: 'borrowerImports.batchNotExecutable' }, 409)); show(); await choose(); await userEvent.click(screen.getByRole('button', { name: 'Validate' })); await userEvent.click(await screen.findByRole('button', { name: 'Execute Import' })); expect(await screen.findByRole('alert')).toHaveTextContent('cannot be executed'); applyLanguage('ar'); await waitFor(() => expect(document.documentElement.dir).toBe('rtl')); expect(screen.getByRole('heading', { name: 'استيراد المقترضين' })).toBeInTheDocument(); expect(resources.en.translation.borrowerImport).toBeTruthy(); expect(resources.ar.translation.importDuplicateCivil).toBeTruthy();
 });
+
+test('shows stable execution-busy error without a false completed state', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(json(preview, 201)).mockResolvedValueOnce(json({ errorCode: 'borrowerImports.executionBusy' }, 409)); show(); await choose(); await userEvent.click(screen.getByRole('button', { name: 'Validate' })); await userEvent.click(await screen.findByRole('button', { name: 'Execute Import' })); expect(await screen.findByRole('alert')).toHaveTextContent('already being executed'); expect(screen.queryByText(/Imported:/)).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Execute Import' })).toBeEnabled();
+});

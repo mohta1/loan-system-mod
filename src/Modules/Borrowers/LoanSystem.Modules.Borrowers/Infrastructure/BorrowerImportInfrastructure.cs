@@ -5,6 +5,8 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using LoanSystem.Modules.Borrowers.Application;
 using LoanSystem.Modules.Borrowers.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 
 namespace LoanSystem.Modules.Borrowers.Infrastructure;
 
@@ -88,7 +90,7 @@ public sealed class OpenXmlBorrowerWorkbookParser : IBorrowerWorkbookParser
         return value;
     }
 }
-public sealed class BorrowerImportStore(BorrowersDbContext db) : IBorrowerImportStore
+public sealed class BorrowerImportStore(BorrowersDbContext db, IOptions<BorrowerImportOptions> options) : IBorrowerImportStore
 {
     public async Task<IReadOnlySet<string>> ExistingCivilNumbersAsync(IEnumerable<string> values, CancellationToken ct) { var items = values.Distinct().ToArray(); return (await db.Borrowers.Where(x => items.Contains(x.CivilNumber)).Select(x => x.CivilNumber).ToListAsync(ct)).ToHashSet(); }
     public async Task<IReadOnlySet<string>> ExistingEmployeeNumbersAsync(IEnumerable<string> values, CancellationToken ct) { var items = values.Distinct().ToArray(); return (await db.Borrowers.Where(x => x.EmployeeNumber != null && items.Contains(x.EmployeeNumber)).Select(x => x.EmployeeNumber!).ToListAsync(ct)).ToHashSet(); }
@@ -103,7 +105,7 @@ public sealed class BorrowerImportStore(BorrowersDbContext db) : IBorrowerImport
     public async Task<BorrowerImportDto?> ExecuteAsync(Guid batchId, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
-        await db.Database.ExecuteSqlInterpolatedAsync($"EXEC sp_getapplock @Resource={"borrower-import:" + batchId}, @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=15000", ct);
+        if (await AcquireExecutionLockAsync(batchId, transaction, ct) < 0) throw new BorrowerImportExecutionBusyException();
         var batch = await db.ImportBatches.Include(x => x.Rows).SingleOrDefaultAsync(x => x.BatchId == batchId, ct);
         if (batch is null) { await transaction.CommitAsync(ct); return null; }
         if (batch.Status == "Completed") { var completed = Map(batch); await transaction.CommitAsync(ct); return completed; }
@@ -123,6 +125,15 @@ public sealed class BorrowerImportStore(BorrowersDbContext db) : IBorrowerImport
             catch (BorrowerValidationException) { row.Status = "Failed"; row.ErrorCode = "borrowers.validation"; batch.FailedRows++; }
         }
         batch.FailedRows += batch.InvalidRows; batch.Status = "Completed"; batch.CompletedAtUtc = DateTimeOffset.UtcNow; await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return Map(batch);
+    }
+    private async Task<int> AcquireExecutionLockAsync(Guid batchId, IDbContextTransaction transaction, CancellationToken ct)
+    {
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.Transaction = transaction.GetDbTransaction();
+        command.CommandText = "DECLARE @result int; EXEC @result = sys.sp_getapplock @Resource = @resource, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = @timeout; SELECT @result;";
+        var resource = command.CreateParameter(); resource.ParameterName = "@resource"; resource.Value = $"borrower-import:{batchId}"; command.Parameters.Add(resource);
+        var timeout = command.CreateParameter(); timeout.ParameterName = "@timeout"; timeout.Value = options.Value.ExecutionLockTimeoutMilliseconds; command.Parameters.Add(timeout);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
     }
     private static BorrowerImportDto Map(BorrowerImportBatch batch) => new(batch.BatchId, batch.SourceDocumentId, batch.Status, batch.TotalRows, batch.ValidRows, batch.InvalidRows, batch.ImportedRows, batch.FailedRows, batch.CreatedAtUtc, batch.CompletedAtUtc, batch.Rows.OrderBy(x => x.RowNumber).Select(x => new BorrowerImportRowDto(x.RowNumber, x.Status, JsonSerializer.Deserialize<BorrowerInput>(x.RawPayload)!.CivilNumber, JsonSerializer.Deserialize<BorrowerInput>(x.RawPayload)!.EmployeeNumber, x.ErrorCode?.Split('|') ?? [], x.BorrowerId)).ToArray());
 }

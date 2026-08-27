@@ -36,6 +36,7 @@ internal static class BorrowerEndpoints
     private static async Task<IResult> ExecuteImport(Guid batchId, BorrowerImportService service, CancellationToken ct)
     {
         try { var result = await service.ExecuteAsync(batchId, ct); return result is null ? Problem(404, "Import batch not found", "borrowerImports.batchNotFound") : Results.Ok(result); }
+        catch (BorrowerImportExecutionBusyException) { return Problem(409, "Import batch execution is already in progress", "borrowerImports.executionBusy"); }
         catch (BorrowerImportException exception) { return Problem(409, "Import batch cannot be executed", exception.Code); }
     }
 

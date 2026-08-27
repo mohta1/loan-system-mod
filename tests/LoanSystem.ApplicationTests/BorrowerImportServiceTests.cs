@@ -67,6 +67,14 @@ public sealed class BorrowerImportServiceTests
     }
 
     [Fact]
+    public async Task Validate_discards_source_document_when_batch_persistence_fails()
+    {
+        var context = Context(); context.Store.CreateError = new InvalidOperationException("persistence failed");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Validate(context));
+        Assert.Equal(1, context.Documents.DiscardCalls); Assert.Equal(context.Documents.DocumentId, context.Documents.DiscardedDocumentId); Assert.Equal(UserId, context.Documents.DiscardedBy);
+    }
+
+    [Fact]
     public async Task Get_and_execute_delegate_existing_and_missing_results()
     {
         var context = Context(); var id = Guid.NewGuid(); context.Store.GetResult = context.Store.Result; context.Store.ExecuteResult = context.Store.Result;
@@ -98,7 +106,11 @@ public sealed class BorrowerImportServiceTests
         public long Length { get; private set; }
         public Guid UserId { get; private set; }
         public bool ContentWasReadable { get; private set; }
+        public int DiscardCalls { get; private set; }
+        public Guid DiscardedDocumentId { get; private set; }
+        public Guid DiscardedBy { get; private set; }
         public Task<Guid> StoreAsync(string fileName, string contentType, long length, Stream content, Guid uploadedBy, CancellationToken cancellationToken) { Calls++; FileName = fileName; ContentType = contentType; Length = length; UserId = uploadedBy; ContentWasReadable = content.ReadByte() >= 0; return Task.FromResult(DocumentId); }
+        public Task DiscardAsync(Guid documentId, Guid uploadedBy, CancellationToken cancellationToken) { DiscardCalls++; DiscardedDocumentId = documentId; DiscardedBy = uploadedBy; return Task.CompletedTask; }
     }
     private sealed class StoreFake : IBorrowerImportStore
     {
@@ -110,9 +122,10 @@ public sealed class BorrowerImportServiceTests
         public BorrowerImportDto? ExecuteResult { get; set; }
         public Guid LastGetId { get; private set; }
         public Guid LastExecuteId { get; private set; }
+        public Exception? CreateError { get; set; }
         public Task<IReadOnlySet<string>> ExistingCivilNumbersAsync(IEnumerable<string> values, CancellationToken ct) => Task.FromResult<IReadOnlySet<string>>(ExistingCivil);
         public Task<IReadOnlySet<string>> ExistingEmployeeNumbersAsync(IEnumerable<string> values, CancellationToken ct) => Task.FromResult<IReadOnlySet<string>>(ExistingEmployee);
-        public Task<BorrowerImportDto> CreateAsync(Guid sourceDocumentId, Guid createdBy, IReadOnlyList<ParsedBorrowerRow> rows, CancellationToken ct) { CreateCalls++; SourceDocumentId = sourceDocumentId; CreatedBy = createdBy; Rows = rows; return Task.FromResult(Result); }
+        public Task<BorrowerImportDto> CreateAsync(Guid sourceDocumentId, Guid createdBy, IReadOnlyList<ParsedBorrowerRow> rows, CancellationToken ct) { CreateCalls++; SourceDocumentId = sourceDocumentId; CreatedBy = createdBy; Rows = rows; return CreateError is null ? Task.FromResult(Result) : Task.FromException<BorrowerImportDto>(CreateError); }
         public Task<BorrowerImportDto?> GetAsync(Guid batchId, CancellationToken ct) { LastGetId = batchId; return Task.FromResult(GetResult); }
         public Task<BorrowerImportDto?> ExecuteAsync(Guid batchId, CancellationToken ct) { LastExecuteId = batchId; return Task.FromResult(ExecuteResult); }
     }

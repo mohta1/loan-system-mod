@@ -41,4 +41,10 @@ internal sealed class ImportSourceDocumentStore(DocumentService documents) : IIm
 {
     public async Task<Guid> StoreAsync(string fileName, string contentType, long length, Stream content, Guid uploadedBy, CancellationToken cancellationToken) =>
         (await documents.UploadAsync(fileName, contentType, length, content, uploadedBy, cancellationToken)).DocumentId;
+
+    public async Task DiscardAsync(Guid documentId, Guid uploadedBy, CancellationToken cancellationToken)
+    {
+        var document = await documents.AuthorizedAsync(documentId, uploadedBy, cancellationToken);
+        if (document is not null) await documents.DeleteAsync(document, cancellationToken);
+    }
 }
