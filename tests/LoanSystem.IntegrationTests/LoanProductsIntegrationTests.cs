@@ -5,6 +5,7 @@ using LoanSystem.Contracts;
 using LoanSystem.Modules.IdentityAccess.Domain;
 using LoanSystem.Modules.IdentityAccess.Infrastructure;
 using LoanSystem.Modules.LoanProducts.Application;
+using LoanSystem.Modules.LoanProducts.Domain;
 using LoanSystem.Modules.LoanProducts.Infrastructure;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -49,14 +50,58 @@ public sealed class LoanProductsIntegrationTests(IdentitySqlFixture fixture)
         var persisted = await database.Versions.AsNoTracking().Include(value => value.FinancingTypes)
             .SingleAsync(value => value.Id == created.GetProperty("versionId").GetGuid());
         Assert.Equal(productId, persisted.LoanProductId);
+        Assert.Equal(created.GetProperty("versionId").GetGuid(), persisted.Id);
         Assert.Equal(LoanSystem.Modules.LoanProducts.Domain.LoanProductVersionStatus.Draft, persisted.Status);
         Assert.NotEmpty(persisted.RowVersion);
         Assert.Equal(["Build New House", "Purchase Existing House"], persisted.FinancingTypes.Select(value => value.Value).Order().ToArray());
+        Assert.All(persisted.FinancingTypes, value => Assert.Equal(persisted.Id, value.VersionId));
         Assert.Equal("Configured nationality", persisted.EligibilityConfiguration.RequiredNationality);
         Assert.Equal(2, persisted.EligibilityConfiguration.MaximumApplicationCount);
         Assert.Equal(["Grade A", "Grade B"], persisted.EligibilityConfiguration.RankGradeAmountRules.Select(value => value.RankGrade).ToArray());
         Assert.Equal(120, persisted.EligibilityConfiguration.Term.MaximumTermMonths);
         Assert.Equal("Configured term rule", persisted.EligibilityConfiguration.Term.DueDateRule);
+    }
+
+    [Fact]
+    public async Task Ef_model_and_change_tracker_recognize_client_keyed_draft_graph_as_added()
+    {
+        using var client = fixture.Factory.CreateClient(new() { HandleCookies = true });
+        await Login(client);
+        var productId = (await CreateProduct(client)).GetProperty("loanProductId").GetGuid();
+        using var scope = fixture.Factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<LoanProductsDbContext>();
+        var product = await database.FindAsync(productId, default);
+        Assert.NotNull(product);
+        var eligibility = new EligibilityConfiguration("Configured nationality", 2, [new("Grade A", 10000), new("Grade B", 20000)], new(120, "Configured term rule"));
+        var version = product.CreateDraftVersion(1, 30000, "OMR", 25.5m, ["Purchase Existing House", "Build New House"], eligibility, new(2035, 1, 1), null);
+
+        database.ChangeTracker.DetectChanges();
+        var debugView = database.ChangeTracker.DebugView.LongView;
+        Assert.Equal(EntityState.Unchanged, database.Entry(product).State);
+        Assert.Equal(EntityState.Added, database.Entry(version).State);
+        Assert.All(version.FinancingTypes, value =>
+        {
+            Assert.Equal(EntityState.Added, database.Entry(value).State);
+            Assert.Equal(version.Id, value.VersionId);
+        });
+
+        var productType = database.Model.FindEntityType(typeof(LoanProduct));
+        var versionType = database.Model.FindEntityType(typeof(LoanProductVersion));
+        var financingType = database.Model.FindEntityType(typeof(LoanProductFinancingType));
+        Assert.NotNull(productType);
+        Assert.NotNull(versionType);
+        Assert.NotNull(financingType);
+        Assert.Equal(Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never, productType.FindProperty(nameof(LoanProduct.Id))!.ValueGenerated);
+        Assert.Equal(Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never, versionType.FindProperty(nameof(LoanProductVersion.Id))!.ValueGenerated);
+        Assert.Equal("_versions", productType.FindNavigation(nameof(LoanProduct.Versions))!.FieldInfo!.Name);
+        Assert.Equal("_financingTypes", versionType.FindNavigation(nameof(LoanProductVersion.FinancingTypes))!.FieldInfo!.Name);
+        var relationship = Assert.Single(financingType.GetForeignKeys());
+        Assert.Equal(typeof(LoanProductVersion), relationship.PrincipalEntityType.ClrType);
+        Assert.Equal([nameof(LoanProductFinancingType.VersionId)], relationship.Properties.Select(value => value.Name).ToArray());
+        Assert.Equal([nameof(LoanProductVersion.Id)], relationship.PrincipalKey.Properties.Select(value => value.Name).ToArray());
+        Assert.DoesNotContain(relationship.Properties, value => value.IsShadowProperty());
+        Assert.Contains("LoanProductVersion", debugView, StringComparison.Ordinal);
+        Assert.Contains("Added", debugView, StringComparison.Ordinal);
     }
 
     [Fact]

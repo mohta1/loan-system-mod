@@ -172,14 +172,14 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<LoanProduc
     {
         builder.ToTable("loan_products", "loan_products");
         builder.HasKey(product => product.Id);
-        builder.Property(product => product.Id).HasColumnName("loan_product_id");
+        builder.Property(product => product.Id).HasColumnName("loan_product_id").ValueGeneratedNever();
         builder.Property(product => product.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         builder.Property(product => product.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(20);
         builder.Property(product => product.CreatedAtUtc).HasColumnName("created_at_utc");
         builder.Property(product => product.UpdatedAtUtc).HasColumnName("updated_at_utc");
         builder.Property(product => product.RowVersion).HasColumnName("row_version").IsRowVersion();
         builder.HasMany(product => product.Versions).WithOne().HasForeignKey(version => version.LoanProductId).OnDelete(DeleteBehavior.Restrict);
-        builder.Navigation(product => product.Versions).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(product => product.Versions).HasField("_versions").UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }
 
@@ -191,7 +191,7 @@ internal sealed class VersionConfiguration : IEntityTypeConfiguration<LoanProduc
     {
         builder.ToTable("loan_product_versions", "loan_products");
         builder.HasKey(version => version.Id);
-        builder.Property(version => version.Id).HasColumnName("version_id");
+        builder.Property(version => version.Id).HasColumnName("version_id").ValueGeneratedNever();
         builder.Property(version => version.LoanProductId).HasColumnName("loan_product_id");
         builder.Property(version => version.VersionNumber).HasColumnName("version_number");
         builder.HasIndex(version => new { version.LoanProductId, version.VersionNumber }).IsUnique().HasDatabaseName("IX_versions_product_number");
@@ -212,7 +212,11 @@ internal sealed class VersionConfiguration : IEntityTypeConfiguration<LoanProduc
         builder.Property(version => version.PublishedAtUtc).HasColumnName("published_at_utc");
         builder.Property(version => version.CreatedAtUtc).HasColumnName("created_at_utc");
         builder.Property(version => version.RowVersion).HasColumnName("row_version").IsRowVersion();
-        builder.Navigation(version => version.FinancingTypes).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasMany(version => version.FinancingTypes)
+            .WithOne()
+            .HasForeignKey(type => type.VersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(version => version.FinancingTypes).HasField("_financingTypes").UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 
     internal static string SerializeEligibility(EligibilityConfiguration value) => JsonSerializer.Serialize(value, JsonOptions);
@@ -225,9 +229,8 @@ internal sealed class FinancingTypeConfiguration : IEntityTypeConfiguration<Loan
     {
         builder.ToTable("loan_product_financing_types", "loan_products");
         builder.HasKey(type => new { type.VersionId, type.Value });
-        builder.Property(type => type.VersionId).HasColumnName("version_id");
+        builder.Property(type => type.VersionId).HasColumnName("version_id").ValueGeneratedNever();
         builder.Property(type => type.Value).HasColumnName("financing_type").HasMaxLength(100);
-        builder.HasOne<LoanProductVersion>().WithMany(version => version.FinancingTypes).HasForeignKey(type => type.VersionId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 

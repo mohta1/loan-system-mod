@@ -25,7 +25,7 @@ public sealed class EligibilityConfiguration
 
 public sealed class LoanProduct
 {
-    private readonly List<LoanProductVersion> versions = [];
+    private readonly List<LoanProductVersion> _versions = [];
 
     private LoanProduct() { }
 
@@ -43,14 +43,14 @@ public sealed class LoanProduct
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
     public byte[] RowVersion { get; private set; } = [];
-    public IReadOnlyCollection<LoanProductVersion> Versions => versions.AsReadOnly();
+    public IReadOnlyCollection<LoanProductVersion> Versions => _versions.AsReadOnly();
 
     public static LoanProduct Create(string name, DateTimeOffset? now = null) => new(name, now ?? DateTimeOffset.UtcNow);
 
     public LoanProductVersion CreateDraftVersion(int versionNumber, decimal maximumAmount, string currency, decimal deductionPercentage, IEnumerable<string> financingTypes, EligibilityConfiguration eligibility, DateOnly effectiveFrom, DateOnly? effectiveTo, DateTimeOffset? now = null)
     {
         var version = LoanProductVersion.CreateDraft(Id, versionNumber, maximumAmount, currency, deductionPercentage, financingTypes, eligibility, effectiveFrom, effectiveTo, now);
-        versions.Add(version);
+        _versions.Add(version);
         return version;
     }
 
@@ -67,7 +67,7 @@ public sealed class LoanProduct
 
 public sealed class LoanProductVersion
 {
-    private readonly List<LoanProductFinancingType> financingTypes = [];
+    private readonly List<LoanProductFinancingType> _financingTypes = [];
 
     private LoanProductVersion() { }
 
@@ -94,7 +94,7 @@ public sealed class LoanProductVersion
     public DateTimeOffset? PublishedAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public byte[] RowVersion { get; private set; } = [];
-    public IReadOnlyCollection<LoanProductFinancingType> FinancingTypes => financingTypes.AsReadOnly();
+    public IReadOnlyCollection<LoanProductFinancingType> FinancingTypes => _financingTypes.AsReadOnly();
 
     internal static LoanProductVersion CreateDraft(Guid productId, int number, decimal amount, string currency, decimal percentage, IEnumerable<string> types, EligibilityConfiguration eligibility, DateOnly from, DateOnly? to, DateTimeOffset? now = null) => new(productId, number, amount, currency, percentage, types, eligibility, from, to, now ?? DateTimeOffset.UtcNow);
 
@@ -122,11 +122,13 @@ public sealed class LoanProductVersion
         EligibilityConfiguration = new EligibilityConfiguration(eligibility.RequiredNationality, eligibility.MaximumApplicationCount, eligibility.RankGradeAmountRules, eligibility.Term);
         EffectiveFrom = from;
         EffectiveTo = to;
-        financingTypes.Clear();
-        financingTypes.AddRange(normalizedTypes.Select(value => new LoanProductFinancingType(Id, value)));
+        _financingTypes.RemoveAll(existing => !normalizedTypes.Contains(existing.Value, StringComparer.OrdinalIgnoreCase));
+        _financingTypes.AddRange(normalizedTypes
+            .Where(value => !_financingTypes.Any(existing => string.Equals(existing.Value, value, StringComparison.OrdinalIgnoreCase)))
+            .Select(value => new LoanProductFinancingType(Id, value)));
     }
 
-    private void Validate() => Validate(MaximumAmount, Currency, DeductionPercentage, financingTypes.Select(value => value.Value), EligibilityConfiguration, EffectiveFrom, EffectiveTo);
+    private void Validate() => Validate(MaximumAmount, Currency, DeductionPercentage, _financingTypes.Select(value => value.Value), EligibilityConfiguration, EffectiveFrom, EffectiveTo);
 
     private static void Validate(decimal amount, string currency, decimal percentage, IEnumerable<string> types, EligibilityConfiguration eligibility, DateOnly from, DateOnly? to)
     {
