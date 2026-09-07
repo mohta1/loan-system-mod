@@ -235,6 +235,27 @@ public sealed class LoanProductsIntegrationTests(IdentitySqlFixture fixture)
     }
 
     [Fact]
+    public async Task Concurrent_publication_of_different_products_does_not_deadlock()
+    {
+        using var firstClient = fixture.Factory.CreateClient(new() { HandleCookies = true });
+        using var secondClient = fixture.Factory.CreateClient(new() { HandleCookies = true });
+        await Login(firstClient);
+        await Login(secondClient);
+
+        var firstProductId = (await CreateProduct(firstClient)).GetProperty("loanProductId").GetGuid();
+        var secondProductId = (await CreateProduct(secondClient)).GetProperty("loanProductId").GetGuid();
+        var firstDraft = await CreateDraft(firstClient, firstProductId, Input(new(2046, 1, 1), new(2046, 12, 31), 10000));
+        var secondDraft = await CreateDraft(secondClient, secondProductId, Input(new(2046, 1, 1), new(2046, 12, 31), 10000));
+
+        var responses = await Task.WhenAll(
+            Send(firstClient, HttpMethod.Post, $"/api/v1/loan-products/{firstProductId}/versions/{firstDraft.GetProperty("versionId").GetGuid()}/publish", firstDraft.GetProperty("eTag").GetString()!, new { }),
+            Send(secondClient, HttpMethod.Post, $"/api/v1/loan-products/{secondProductId}/versions/{secondDraft.GetProperty("versionId").GetGuid()}/publish", secondDraft.GetProperty("eTag").GetString()!, new { }));
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        Assert.DoesNotContain(responses, response => response.StatusCode == HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
     public async Task Anonymous_requests_are_rejected_and_migration_shape_is_present()
     {
         using var anonymous = fixture.Factory.CreateClient();
