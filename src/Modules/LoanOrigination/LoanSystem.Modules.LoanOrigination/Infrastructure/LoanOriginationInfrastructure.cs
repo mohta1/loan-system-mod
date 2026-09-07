@@ -11,7 +11,12 @@ public sealed class LoanOriginationDbContext(DbContextOptions<LoanOriginationDbC
     public Task AddAsync(LoanApplication value, CancellationToken ct) => LoanApplications.AddAsync(value, ct).AsTask();
     public Task<LoanApplication?> FindAsync(Guid id, CancellationToken ct) => LoanApplications.SingleOrDefaultAsync(x => x.Id == id, ct);
     public Task<int> CountConflictingApplicationsAsync(Guid borrowerId, Guid excludeApplicationId, CancellationToken ct) => LoanApplications.AsNoTracking().CountAsync(x => x.BorrowerId == borrowerId && x.Id != excludeApplicationId && (x.Status == LoanApplicationStatus.Draft || x.Status == LoanApplicationStatus.Submitted || x.Status == LoanApplicationStatus.UnitApproved), ct);
-    public void Expect(LoanApplication value, byte[] expected) => Entry(value).Property(x => x.RowVersion).OriginalValue = expected;
+    public void Expect(LoanApplication value, byte[] expected)
+    {
+        if (!value.RowVersion.AsSpan().SequenceEqual(expected))
+            throw new LoanApplicationConcurrencyException();
+        Entry(value).Property(x => x.RowVersion).OriginalValue = expected;
+    }
     public async Task SaveAsync(CancellationToken ct) { try { await SaveChangesAsync(ct); } catch (DbUpdateConcurrencyException) { throw new LoanApplicationConcurrencyException(); } }
     public async Task<LoanApplicationPage> SearchAsync(LoanApplicationSearch search, CancellationToken ct) { var q = LoanApplications.AsNoTracking(); if (search.LoanApplicationId.HasValue) q = q.Where(x => x.Id == search.LoanApplicationId); if (search.BorrowerId.HasValue) q = q.Where(x => x.BorrowerId == search.BorrowerId); if (search.LoanProductId.HasValue) q = q.Where(x => x.LoanProductId == search.LoanProductId); if (search.Status.HasValue) q = q.Where(x => x.Status == search.Status); var count = await q.CountAsync(ct); var values = await q.OrderByDescending(x => x.CreatedAtUtc).ThenBy(x => x.Id).Skip((search.PageNumber - 1) * search.PageSize).Take(search.PageSize).ToListAsync(ct); var rows = values.Select(x => new LoanApplicationListItem(x.Id, x.BorrowerId, x.BorrowerSnapshot.FullName, x.LoanProductId, x.ProductSnapshot.ProductName, x.RequestedAmount, x.Currency, x.FinancingType, x.Status.ToString(), x.CreatedAtUtc, x.SubmittedAtUtc)).ToArray(); return new(rows, search.PageNumber, search.PageSize, count); }
 }
