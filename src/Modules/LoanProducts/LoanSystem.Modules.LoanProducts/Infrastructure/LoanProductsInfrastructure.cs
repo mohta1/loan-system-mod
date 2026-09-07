@@ -84,14 +84,30 @@ public sealed class LoanProductsDbContext(DbContextOptions<LoanProductsDbContext
 
     public async Task LockProductAsync(Guid productId, CancellationToken ct)
     {
-        await BeginOwnedTransactionAsync(ct);
+        await BeginOwnedTransactionAsync(IsolationLevel.ReadCommitted, ct);
 
         var connection = (SqlConnection)Database.GetDbConnection();
         await using var command = connection.CreateCommand();
         command.Transaction = (SqlTransaction)Database.CurrentTransaction!.GetDbTransaction();
-        command.CommandText = "SELECT loan_product_id FROM loan_products.loan_products WITH (UPDLOCK, HOLDLOCK) WHERE loan_product_id = @productId";
-        command.Parameters.Add(new SqlParameter("@productId", SqlDbType.UniqueIdentifier) { Value = productId });
-        if (await command.ExecuteScalarAsync(ct) is null)
+        command.CommandText = """
+            DECLARE @result int;
+            EXEC @result = sys.sp_getapplock
+                @Resource = @resource,
+                @LockMode = 'Exclusive',
+                @LockOwner = 'Transaction',
+                @LockTimeout = 30000;
+            SELECT @result;
+            """;
+        command.Parameters.Add(new SqlParameter("@resource", SqlDbType.NVarChar, 255) { Value = $"loan-products:publish:{productId:D}" });
+        var result = Convert.ToInt32(await command.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+        if (result < 0)
+            throw new InvalidOperationException($"Failed to acquire loan-product publication lock (sp_getapplock result {result}).");
+
+        await using var exists = connection.CreateCommand();
+        exists.Transaction = (SqlTransaction)Database.CurrentTransaction!.GetDbTransaction();
+        exists.CommandText = "SELECT loan_product_id FROM loan_products.loan_products WHERE loan_product_id = @productId";
+        exists.Parameters.Add(new SqlParameter("@productId", SqlDbType.UniqueIdentifier) { Value = productId });
+        if (await exists.ExecuteScalarAsync(ct) is null)
             throw new InvalidOperationException("The loan product disappeared during publication.");
     }
 
@@ -159,10 +175,13 @@ public sealed class LoanProductsDbContext(DbContextOptions<LoanProductsDbContext
         }
     }
 
-    private async Task BeginOwnedTransactionAsync(CancellationToken ct)
+    private Task BeginOwnedTransactionAsync(CancellationToken ct) =>
+        BeginOwnedTransactionAsync(IsolationLevel.Serializable, ct);
+
+    private async Task BeginOwnedTransactionAsync(IsolationLevel isolationLevel, CancellationToken ct)
     {
         if (Database.CurrentTransaction is not null) return;
-        ownedTransaction = await Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        ownedTransaction = await Database.BeginTransactionAsync(isolationLevel, ct);
     }
 }
 
