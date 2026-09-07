@@ -1,6 +1,8 @@
+using System.Text.Json.Serialization;
 namespace LoanSystem.Modules.LoanOrigination.Domain;
 
 public enum LoanApplicationStatus { Draft, Submitted, UnitApproved, Rejected }
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum UnitDecision { Approved, Rejected }
 public sealed record UnitApprovalDecision(UnitDecision Decision, Guid ActorUserId, DateTimeOffset DecidedAtUtc, string? Comment, string? RejectionReason);
 public interface ILoanApplicationDomainEvent;
