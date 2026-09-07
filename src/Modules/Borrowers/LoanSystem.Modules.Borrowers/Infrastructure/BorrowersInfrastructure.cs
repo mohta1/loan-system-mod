@@ -2,6 +2,7 @@ using LoanSystem.Modules.Borrowers.Application;
 using LoanSystem.Modules.Borrowers.Domain;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using LoanSystem.Contracts;
 
 namespace LoanSystem.Modules.Borrowers.Infrastructure;
 
@@ -110,4 +111,12 @@ public sealed class BorrowersDbContext(DbContextOptions<BorrowersDbContext> opti
             return "borrowers.civilNumberConflict";
         return null;
     }
+}
+
+public sealed class BorrowersModule(BorrowersDbContext database) : IBorrowersModule
+{
+    public Task<BorrowerContract?> GetAsync(Guid borrowerId, CancellationToken cancellationToken = default) => database.Borrowers.AsNoTracking()
+        .Where(x => x.Id == borrowerId)
+        .Select(x => new BorrowerContract(x.Id, x.CivilNumber, x.EmployeeNumber, x.FullName, x.PhoneNumber, x.Nationality, x.Organization, x.RankGrade, x.EmploymentInformation, x.Status == BorrowerStatus.Active))
+        .SingleOrDefaultAsync(cancellationToken);
 }

@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\LoanSystem.Api\LoanSystem.Api.csproj" />
+    <ProjectReference Include="..\..\src\Modules\LoanOrigination\LoanSystem.Modules.LoanOrigination\LoanSystem.Modules.LoanOrigination.csproj" />
   </ItemGroup>
 
 </Project>
