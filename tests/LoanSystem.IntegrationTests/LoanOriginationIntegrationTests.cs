@@ -247,6 +247,38 @@ public sealed class LoanOriginationIntegrationTests(IdentitySqlFixture fixture)
         Assert.Equal(originalSnapshot, reloaded.GetProperty("productSnapshot").GetRawText());
     }
 
+
+    [Fact]
+    public async Task Evaluate_and_submit_permissions_are_independent()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        using var admin = await Administrator();
+        var setup = await SetupAvailableVersion(admin);
+        var createdResponse = await admin.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(setup));
+        var created = await Read(createdResponse);
+        var id = created.GetProperty("loanApplicationId").GetGuid();
+        var createdTag = createdResponse.Headers.ETag!.Tag.Trim('"');
+
+        using var anonymous = fixture.Factory.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync($"/api/v1/loan-applications/{id}/evaluate-eligibility", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync($"/api/v1/loan-applications/{id}/submit", new { })).StatusCode);
+
+        using var readOnly = await PermissionClient(admin, $"task07-read-{suffix}", "loanApplications.read");
+        Assert.Equal(HttpStatusCode.OK, (await readOnly.GetAsync($"/api/v1/loan-applications/{id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(readOnly, HttpMethod.Post, $"/api/v1/loan-applications/{id}/evaluate-eligibility", createdTag, new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(readOnly, HttpMethod.Post, $"/api/v1/loan-applications/{id}/submit", createdTag, new { })).StatusCode);
+
+        using var evaluateOnly = await PermissionClient(admin, $"task07-eval-{suffix}", "loanApplications.evaluateEligibility");
+        var evaluated = await Send(evaluateOnly, HttpMethod.Post, $"/api/v1/loan-applications/{id}/evaluate-eligibility", createdTag, new { });
+        Assert.Equal(HttpStatusCode.OK, evaluated.StatusCode);
+        var evaluatedTag = evaluated.Headers.ETag!.Tag.Trim('"');
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(evaluateOnly, HttpMethod.Post, $"/api/v1/loan-applications/{id}/submit", evaluatedTag, new { })).StatusCode);
+
+        using var submitOnly = await PermissionClient(admin, $"task07-submit-{suffix}", "loanApplications.submit");
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(submitOnly, HttpMethod.Post, $"/api/v1/loan-applications/{id}/evaluate-eligibility", evaluatedTag, new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Send(submitOnly, HttpMethod.Post, $"/api/v1/loan-applications/{id}/submit", evaluatedTag, new { })).StatusCode);
+    }
+
     async Task<HttpClient> Administrator() { var client = fixture.Factory.CreateClient(new() { HandleCookies = true }); Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/login", new { username = IdentityAccessIntegrationTests.Admin, password = IdentityAccessIntegrationTests.Password })).StatusCode); return client; }
     static async Task<Setup> SetupAvailableVersion(HttpClient client) { var suffix = Guid.NewGuid().ToString("N"); var civil = $"C-{suffix}"; var employee = $"E-{suffix}"; var name = $"Original {suffix}"; var borrower = await Read(await client.PostAsJsonAsync("/api/v1/borrowers", new { civilNumber = civil, employeeNumber = employee, fullName = name, phoneNumber = "90000000", nationality = "OM", organization = "MOD", rankGrade = "A", employmentInformation = "Active" })); var productName = $"Product {suffix}"; var product = await Read(await client.PostAsJsonAsync("/api/v1/loan-products", new { name = productName })); var productId = product.GetProperty("loanProductId").GetGuid(); var draft = await CreateDraft(client, productId, DateOnly.FromDateTime(DateTime.UtcNow)); await Publish(client, productId, draft); return new(borrower.GetProperty("borrowerId").GetGuid(), productId, draft.VersionId, name, productName, civil, employee); }
     static object ApplicationInput(Setup setup) => new { borrowerId = setup.BorrowerId, loanProductVersionId = setup.VersionId, requestedAmount = 500m, financingType = "Build" };
