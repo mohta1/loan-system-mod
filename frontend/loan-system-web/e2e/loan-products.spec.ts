@@ -35,8 +35,10 @@ test('TASK-05 versioned loan product remains immutable and availability follows 
   await page.getByLabel('Due-Date Rule').fill('Configured E2E due-date rule');
   await expect(page.getByRole('button', { name: 'Purchase Existing House ×' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Build New House ×' })).toBeVisible();
+  const createDraftResponse = page.waitForResponse(response => response.request().method() === 'POST' && /\/api\/v1\/loan-products\/[0-9a-f-]+\/versions$/i.test(new URL(response.url()).pathname));
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Draft')).toBeVisible();
+  expect((await createDraftResponse).status()).toBe(201);
+  await expect(page.getByText('Draft', { exact: true })).toBeVisible();
 
   await page.reload();
   await page.getByRole('button', { name: 'Loan Products' }).click();
@@ -46,8 +48,10 @@ test('TASK-05 versioned loan product remains immutable and availability follows 
   await expect(page.getByText(/Configured E2E grade A — 100000/)).toBeVisible();
   await expect(page.getByText(/Configured E2E grade B — 90000/)).toBeVisible();
   await expect(page.getByText(/Configured E2E grade C — 80000/)).toBeVisible();
+  const publishResponse = page.waitForResponse(response => response.request().method() === 'POST' && /\/api\/v1\/loan-products\/[0-9a-f-]+\/versions\/[0-9a-f-]+\/publish$/i.test(new URL(response.url()).pathname));
   await page.getByRole('button', { name: 'Publish' }).click();
-  await expect(page.getByText('Published')).toBeVisible();
+  expect((await publishResponse).status()).toBe(200);
+  await expect(page.getByText('Published', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit Draft Version' })).toHaveCount(0);
 
   const availableWhileActive = await page.evaluate(async () => {
@@ -57,14 +61,16 @@ test('TASK-05 versioned loan product remains immutable and availability follows 
   expect(availableWhileActive.status).toBe(200);
   expect(availableWhileActive.body.some(product => product.productName === name)).toBeTruthy();
 
+  const deactivateResponse = page.waitForResponse(response => response.request().method() === 'POST' && /\/api\/v1\/loan-products\/[0-9a-f-]+\/deactivate$/i.test(new URL(response.url()).pathname));
   await page.getByRole('button', { name: 'Deactivate' }).click();
-  await expect(page.getByText('Inactive')).toBeVisible();
+  expect((await deactivateResponse).status()).toBe(200);
+  await expect(page.getByText('Inactive', { exact: true })).toBeVisible();
   const availableWhileInactive = await page.evaluate(async productName => {
     const response = await fetch('/api/v1/loan-products/available');
     return (await response.json() as Array<{ productName: string }>).some(product => product.productName === productName);
   }, name);
   expect(availableWhileInactive).toBeFalsy();
-  await expect(page.getByText('Published')).toBeVisible();
+  await expect(page.getByText('Published', { exact: true })).toBeVisible();
   await expect(page.getByText('125000 OMR')).toBeVisible();
   await page.getByRole('button', { name: 'Logout' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
