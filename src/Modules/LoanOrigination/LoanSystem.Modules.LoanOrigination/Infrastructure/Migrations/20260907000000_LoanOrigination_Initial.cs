@@ -1,0 +1,11 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+namespace LoanSystem.Modules.LoanOrigination.Infrastructure.Migrations;
+
+[DbContext(typeof(LoanOriginationDbContext))]
+[Migration("20260907000000_LoanOrigination_Initial")]
+public sealed class LoanOriginationInitial : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder) { migrationBuilder.EnsureSchema("loan_origination"); migrationBuilder.CreateTable(name: "loan_applications", schema: "loan_origination", columns: t => new { loan_application_id = t.Column<Guid>("uniqueidentifier", nullable: false), borrower_id = t.Column<Guid>("uniqueidentifier", nullable: false), loan_product_id = t.Column<Guid>("uniqueidentifier", nullable: false), loan_product_version_id = t.Column<Guid>("uniqueidentifier", nullable: false), requested_amount = t.Column<decimal>("decimal(19,4)", nullable: false), currency = t.Column<string>("char(3)", nullable: false), financing_type = t.Column<string>("nvarchar(100)", maxLength: 100, nullable: false), status = t.Column<string>("nvarchar(30)", maxLength: 30, nullable: false), borrower_snapshot = t.Column<string>("nvarchar(max)", nullable: false), product_snapshot = t.Column<string>("nvarchar(max)", nullable: false), created_at_utc = t.Column<DateTimeOffset>("datetimeoffset", nullable: false), updated_at_utc = t.Column<DateTimeOffset>("datetimeoffset", nullable: false), row_version = t.Column<byte[]>("rowversion", rowVersion: true, nullable: false) }, constraints: c => c.PrimaryKey("PK_loan_applications", x => x.loan_application_id)); migrationBuilder.CreateIndex("IX_loan_applications_borrower_id", "loan_applications", "borrower_id", "loan_origination"); migrationBuilder.CreateIndex("IX_loan_applications_product_id", "loan_applications", "loan_product_id", "loan_origination"); migrationBuilder.CreateIndex("IX_loan_applications_status", "loan_applications", "status", "loan_origination"); migrationBuilder.CreateIndex("IX_loan_applications_created_at", "loan_applications", "created_at_utc", "loan_origination"); }
+    protected override void Down(MigrationBuilder migrationBuilder) => migrationBuilder.DropTable("loan_applications", "loan_origination");
+}

@@ -15,3 +15,6 @@ public sealed record LoanProductEligibility(string RequiredNationality, int Maxi
 public sealed record LoanProductVersionContract(Guid LoanProductId, Guid LoanProductVersionId, string ProductName, int VersionNumber, string ProductStatus, decimal MaximumAmount, string Currency, decimal DeductionPercentage, IReadOnlyList<string> FinancingTypes, LoanProductEligibility EligibilityConfiguration, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string VersionStatus, DateTimeOffset? PublishedAtUtc);
 public sealed record LoanProductVersionLookup(LoanProductVersionLookupStatus Status, LoanProductVersionContract? Version);
 public interface ILoanProductsModule : IModuleContract { Task<LoanProductVersionLookup> GetVersionAsync(Guid versionId, DateOnly businessDate, CancellationToken cancellationToken = default); }
+
+public sealed record BorrowerContract(Guid BorrowerId, string CivilNumber, string? EmployeeNumber, string FullName, string? PhoneNumber, string Nationality, string Organization, string? RankGrade, string? EmploymentInformation, bool IsActive);
+public interface IBorrowersModule : IModuleContract { Task<BorrowerContract?> GetAsync(Guid borrowerId, CancellationToken cancellationToken = default); }

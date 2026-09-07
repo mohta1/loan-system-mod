@@ -97,6 +97,18 @@ public sealed class ArchitectureRulesTests
     }
 
     [Fact]
+    public void Borrowers_public_integration_contract_is_provider_neutral()
+    {
+        var contract = typeof(Contracts.IBorrowersModule);
+        Assert.Equal(typeof(Contracts.IModuleContract), contract.GetInterfaces().Single());
+        Assert.All(contract.GetMethods(), method =>
+        {
+            Assert.DoesNotContain("Infrastructure", method.ReturnType.FullName, StringComparison.Ordinal);
+            Assert.DoesNotContain("DbContext", method.ReturnType.FullName, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public void Transactional_modules_do_not_depend_on_reporting()
     {
         var reportingName = typeof(Modules.Reporting.ModuleMarker).Assembly.GetName().Name;
