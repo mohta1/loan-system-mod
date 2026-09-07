@@ -19,7 +19,7 @@ public static class LoanApplicationEligibilityEvaluator
     public static EligibilityDecision Evaluate(LoanApplication application, int conflictingApplications, DateTimeOffset? now = null)
     {
         ArgumentNullException.ThrowIfNull(application);
-        if (conflictingApplications < 0) throw new ArgumentOutOfRangeException(nameof(conflictingApplications));
+        ArgumentOutOfRangeException.ThrowIfNegative(conflictingApplications);
         var configuration = application.ProductSnapshot.EligibilityConfiguration;
         var rules = new List<EligibilityRuleResult>();
         var requiredNationality = configuration.RequiredNationality?.Trim() ?? "";
