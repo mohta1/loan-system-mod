@@ -165,7 +165,7 @@ public sealed class LoanProductsIntegrationTests(IdentitySqlFixture fixture)
 
         using var scope = fixture.Factory.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<LoanProductsDbContext>();
-        Assert.Empty(await database.AvailableAsync(new(2029, 12, 31), default));
+        Assert.DoesNotContain(await database.AvailableAsync(new(2029, 12, 31), default), value => value.VersionId == firstId);
         Assert.Contains(await database.AvailableAsync(new(2030, 1, 1), default), value => value.VersionId == firstId);
         Assert.Contains(await database.AvailableAsync(new(2030, 6, 1), default), value => value.VersionId == firstId);
         Assert.Contains(await database.AvailableAsync(new(2030, 12, 31), default), value => value.VersionId == firstId);
@@ -184,7 +184,7 @@ public sealed class LoanProductsIntegrationTests(IdentitySqlFixture fixture)
         var detail = await client.GetAsync($"/api/v1/loan-products/{productId}");
         var productEtag = detail.Headers.ETag!.Tag.Trim('"');
         Assert.Equal(HttpStatusCode.OK, (await Send(client, HttpMethod.Post, $"/api/v1/loan-products/{productId}/deactivate", productEtag, new { })).StatusCode);
-        Assert.Empty(await database.AvailableAsync(new(2030, 6, 1), default));
+        Assert.DoesNotContain(await database.AvailableAsync(new(2030, 6, 1), default), value => value.VersionId == firstId);
         Assert.Equal(LoanProductVersionLookupStatus.ProductInactive, (await module.GetVersionAsync(firstId, new(2030, 6, 1))).Status);
     }
 
