@@ -73,6 +73,53 @@ public sealed class LoanApplicationServiceTests
 
     [Fact] public async Task Unit_decision_sets_expected_version_invokes_domain_and_maps_metadata() { var store = new Store(); var application = Application(); application.EvaluateEligibility(0); application.Submit(); store.Values.Add(application); var actor = Guid.NewGuid(); byte[] expected = [4, 5]; var result = await Service(store).DecideByUnitAsync(new(application.Id, actor, UnitDecision.Approved, " ok ", expected), default); Assert.NotNull(result); Assert.Equal("UnitApproved", result.Status); Assert.Equal(actor, result.UnitApproval!.ActorUserId); Assert.Equal("ok", result.UnitApproval.Comment); Assert.Same(expected, store.ExpectedVersion); Assert.True(store.Saved); }
     [Fact] public async Task Unit_decision_returns_null_without_saving_when_missing() { var store = new Store(); Assert.Null(await Service(store).DecideByUnitAsync(new(Guid.NewGuid(), Guid.NewGuid(), UnitDecision.Rejected, "reason", [1]), default)); Assert.False(store.Saved); }
+    [Fact]
+    public async Task Committee_decision_sets_expected_version_invokes_domain_and_maps_metadata()
+    {
+        var store = new Store();
+        var application = Application();
+        application.EvaluateEligibility(0);
+        application.Submit();
+        application.ApproveByUnit(Guid.NewGuid(), "unit");
+        store.Values.Add(application);
+        var actor = Guid.NewGuid();
+        byte[] expected = [7, 8];
+
+        var result = await Service(store).DecideByCommitteeAsync(new(application.Id, actor, CommitteeDecision.Approved, " committee ", expected), default);
+
+        Assert.NotNull(result);
+        Assert.Equal("CommitteeApproved", result.Status);
+        Assert.Equal(actor, result.CommitteeApproval!.ActorUserId);
+        Assert.Equal("committee", result.CommitteeApproval.Comment);
+        Assert.Equal(UnitDecision.Approved, result.UnitApproval!.Decision);
+        Assert.Same(expected, store.ExpectedVersion);
+        Assert.Same(application, store.ExpectedApplication);
+        Assert.True(store.Saved);
+    }
+
+    [Fact]
+    public async Task Committee_rejection_maps_reason_and_missing_application_does_not_save()
+    {
+        var store = new Store();
+        var application = Application();
+        application.EvaluateEligibility(0);
+        application.Submit();
+        application.ApproveByUnit(Guid.NewGuid());
+        store.Values.Add(application);
+
+        var rejected = await Service(store).DecideByCommitteeAsync(new(application.Id, Guid.NewGuid(), CommitteeDecision.Rejected, " incomplete ", [9]), default);
+
+        Assert.NotNull(rejected);
+        Assert.Equal("Rejected", rejected.Status);
+        Assert.Equal("incomplete", rejected.CommitteeApproval!.RejectionReason);
+        Assert.NotNull(rejected.RejectedAtUtc);
+
+        var missingStore = new Store();
+        Assert.Null(await Service(missingStore).DecideByCommitteeAsync(new(Guid.NewGuid(), Guid.NewGuid(), CommitteeDecision.Approved, null, [1]), default));
+        Assert.False(missingStore.Saved);
+        Assert.Null(missingStore.ExpectedApplication);
+    }
+
     static LoanApplication Application() => LoanApplication.Create(Borrower().BorrowerId, Snapshot(), 500m, "Build", new("1", "E1", "Original", null, "OM", "MOD", "A", "Employment", "Active"));
     static ProductSnapshot Snapshot() { var product = Product(); return new(product.LoanProductId, product.LoanProductVersionId, product.ProductName, product.VersionNumber, product.MaximumAmount, product.Currency, product.DeductionPercentage, ["Build", "Renovate"], new("OM", 1, [new("A", 1000m)], 240, "Monthly"), product.EffectiveFrom, null, "Active", "Published", product.PublishedAtUtc); }
     static LoanApplicationService Service(Store store) => new(store, new Borrowers(Borrower()), new Products(new(LoanProductVersionLookupStatus.Available, Product())));

@@ -27,3 +27,19 @@ it('shows Unit Review navigation only with unit approval permission',async()=>{
  expect(await screen.findByText('Reader')).toBeInTheDocument();
  expect(screen.queryByRole('button',{name:'Unit Review'})).not.toBeInTheDocument();
 });
+
+
+it('shows Committee Review navigation only with committee approval permission',async()=>{
+ applyLanguage('en');
+ vi.stubGlobal('fetch',vi.fn());
+ vi.mocked(fetch).mockResolvedValueOnce(json({userId:'1',username:'committee',displayName:'Committee User',roles:[],permissions:['loanApplications.read','loanApplications.committeeApprove']}));
+ const view=renderApp();
+ expect(await screen.findByRole('button',{name:'Committee Review'})).toBeInTheDocument();
+ view.unmount();
+
+ vi.mocked(fetch).mockReset();
+ vi.mocked(fetch).mockResolvedValueOnce(json({userId:'2',username:'unit',displayName:'Unit User',roles:[],permissions:['loanApplications.read','loanApplications.unitApprove']}));
+ renderApp();
+ expect(await screen.findByText('Unit User')).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Committee Review'})).not.toBeInTheDocument();
+});
