@@ -125,3 +125,42 @@ it('evaluates, renders server rule results, and submits only an eligible decisio
 });
 
 it('renders ineligible and Arabic reason text',async()=>{applyLanguage('ar');const ineligible={...application,eligibilityDecision:{isEligible:false,evaluatedAtUtc:'2026-01-02T00:00:00Z',permittedAmount:50000,ruleResults:[{rule:'nationality',passed:false,reasonCode:'eligibility.nationalityMismatch'}]},submittedAtUtc:null};fetchMock.mockImplementation((url:string)=>url.endsWith('/a1')?json(ineligible):json({items:[{loanApplicationId:'a1',borrowerName:'Borrower One',status:'Draft'}],pageNumber:1,pageSize:25,totalCount:1}));show(['loanApplications.read']);await userEvent.click(await screen.findByText('Borrower One'));expect(await screen.findByText('غير مؤهل')).toBeInTheDocument();expect(screen.getByText(/الجنسية لا تطابق الشرط المحدد/)).toBeInTheDocument();expect(document.documentElement).toHaveAttribute('dir','rtl')});
+
+
+it('blocks evaluate and submit while an eligible Draft has unsaved edits, then requires re-evaluation after save',async()=>{
+ const eligible={...application,eTag:'etag-2',eligibilityDecision:{isEligible:true,evaluatedAtUtc:'2026-01-02T00:00:00Z',appliedLoanProductVersionId:'v1',appliedProductVersionNumber:2,requestedAmountAtEvaluation:50000,financingTypeAtEvaluation:'Build',permittedAmount:70000,observedConflictingApplicationCount:0,maximumApplicationCount:1,ruleResults:[{rule:'nationality',passed:true,reasonCode:'eligibility.nationalitySatisfied'}]},submittedAtUtc:null};
+ const saved={...eligible,requestedAmount:45000,eligibilityDecision:null,eTag:'etag-3'};
+ fetchMock.mockImplementation((url:string,init?:RequestInit)=>{
+  if(url==='/api/v1/loan-applications?')return json({items:[{loanApplicationId:'a1',borrowerName:'Borrower One',status:'Draft'}],pageNumber:1,pageSize:25,totalCount:1});
+  if(url==='/api/v1/loan-applications/a1'&&!init?.method)return json(eligible);
+  if(url==='/api/v1/loan-applications/a1'&&init?.method==='PUT')return json(saved);
+  throw new Error(url);
+ });
+ show(['loanApplications.read','loanApplications.update','loanApplications.evaluateEligibility','loanApplications.submit']);
+ await userEvent.click(await screen.findByText('Borrower One'));
+ expect(await screen.findByText('Eligible')).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Submit'})).toBeEnabled();
+ expect(screen.getByRole('button',{name:'Evaluate Eligibility'})).toBeEnabled();
+
+ const amount=screen.getByLabelText(/Requested Amount/);
+ await userEvent.clear(amount);
+ await userEvent.type(amount,'45000');
+
+ expect(screen.getByRole('button',{name:'Submit'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Evaluate Eligibility'})).toBeDisabled();
+ expect(screen.getByRole('status')).toHaveTextContent('Save the draft changes before evaluating eligibility or submitting');
+
+ await userEvent.click(screen.getByRole('button',{name:'Save Draft'}));
+
+ await waitFor(()=>{
+  const call=fetchMock.mock.calls.find(([url,init])=>url==='/api/v1/loan-applications/a1'&&(init as RequestInit|undefined)?.method==='PUT');
+  expect(call).toBeTruthy();
+  const headers=new Headers((call![1] as RequestInit).headers);
+  expect(headers.get('If-Match')).toBe('"etag-2"');
+  expect(JSON.parse(String((call![1] as RequestInit).body))).toEqual({requestedAmount:45000,financingType:'Build'});
+ });
+ await waitFor(()=>expect(screen.queryByText('Eligible')).not.toBeInTheDocument());
+ expect(screen.getByRole('button',{name:'Submit'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Evaluate Eligibility'})).toBeEnabled();
+ expect(screen.queryByRole('status')).not.toBeInTheDocument();
+});
