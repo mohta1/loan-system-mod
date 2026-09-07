@@ -11,3 +11,19 @@ it('clears authenticated shell when a Documents operation returns 401',async()=>
 it('clears authenticated shell when a Borrowers request returns 401',async()=>{applyLanguage('en');vi.stubGlobal('fetch',vi.fn());vi.mocked(fetch).mockResolvedValueOnce(json({userId:'1',username:'user',displayName:'Borrower User',roles:[],permissions:['borrowers.read']})).mockResolvedValueOnce(json({},401));renderApp();await userEvent.click(await screen.findByRole('button',{name:'Borrowers'}));expect(await screen.findByRole('heading',{name:'Sign in'})).toBeInTheDocument();expect(screen.queryByText('Borrower User')).not.toBeInTheDocument()})
 
 it('clears authenticated shell when a Borrower Import request returns 401',async()=>{applyLanguage('en');vi.stubGlobal('fetch',vi.fn());vi.mocked(fetch).mockResolvedValueOnce(json({userId:'1',username:'user',displayName:'Importer',roles:[],permissions:['borrowers.import']})).mockResolvedValueOnce(json({},401));renderApp();await userEvent.click(await screen.findByRole('button',{name:'Borrower Import'}));await userEvent.upload(screen.getByLabelText('Choose Excel workbook'),new File(['x'],'borrowers.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));await userEvent.click(screen.getByRole('button',{name:'Validate'}));expect(await screen.findByRole('heading',{name:'Sign in'})).toBeInTheDocument();expect(screen.queryByText('Importer')).not.toBeInTheDocument()})
+
+
+it('shows Unit Review navigation only with unit approval permission',async()=>{
+ applyLanguage('en');
+ vi.stubGlobal('fetch',vi.fn());
+ vi.mocked(fetch).mockResolvedValueOnce(json({userId:'1',username:'unit',displayName:'Unit User',roles:[],permissions:['loanApplications.read','loanApplications.unitApprove']}));
+ const view=renderApp();
+ expect(await screen.findByRole('button',{name:'Unit Review'})).toBeInTheDocument();
+ view.unmount();
+
+ vi.mocked(fetch).mockReset();
+ vi.mocked(fetch).mockResolvedValueOnce(json({userId:'2',username:'reader',displayName:'Reader',roles:[],permissions:['loanApplications.read']}));
+ renderApp();
+ expect(await screen.findByText('Reader')).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Unit Review'})).not.toBeInTheDocument();
+});
