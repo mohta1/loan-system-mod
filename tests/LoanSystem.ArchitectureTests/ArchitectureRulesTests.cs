@@ -71,6 +71,32 @@ public sealed class ArchitectureRulesTests
     }
 
     [Fact]
+    public void Loan_products_domain_and_application_do_not_reference_providers_or_aspnet()
+    {
+        var definitions = ReadModule(typeof(Modules.LoanProducts.ModuleMarker).Assembly).MainModule.Types.SelectMany(Flatten).ToArray();
+        var protectedTypes = definitions.Where(type => type.Namespace.EndsWith(".Domain", StringComparison.Ordinal)
+            || type.Namespace.EndsWith(".Application", StringComparison.Ordinal));
+
+        Assert.All(protectedTypes, type => Assert.DoesNotContain(
+            ReferencedTypeNames(type),
+            reference => reference.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)
+                || reference.StartsWith("Microsoft.Data.SqlClient", StringComparison.Ordinal)
+                || reference.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Loan_products_public_integration_contract_is_provider_neutral()
+    {
+        var contract = typeof(Contracts.ILoanProductsModule);
+        Assert.Equal(typeof(Contracts.IModuleContract), contract.GetInterfaces().Single());
+        Assert.All(contract.GetMethods(), method =>
+        {
+            Assert.DoesNotContain("Infrastructure", method.ReturnType.FullName, StringComparison.Ordinal);
+            Assert.DoesNotContain("DbContext", method.ReturnType.FullName, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public void Transactional_modules_do_not_depend_on_reporting()
     {
         var reportingName = typeof(Modules.Reporting.ModuleMarker).Assembly.GetName().Name;
