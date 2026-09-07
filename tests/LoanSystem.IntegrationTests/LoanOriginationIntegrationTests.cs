@@ -180,6 +180,73 @@ public sealed class LoanOriginationIntegrationTests(IdentitySqlFixture fixture)
         }
     }
 
+
+    [Fact]
+    public async Task Eligibility_uses_snapshot_and_application_count_and_rechecks_product()
+    {
+        using var client = await Administrator();
+        var setup = await SetupAvailableVersion(client);
+
+        var firstResponse = await client.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(setup));
+        var first = await Read(firstResponse);
+        var firstId = first.GetProperty("loanApplicationId").GetGuid();
+
+        var borrowerResponse = await client.GetAsync($"/api/v1/borrowers/{setup.BorrowerId}");
+        var changedBorrower = new { civilNumber = setup.CivilNumber, employeeNumber = setup.EmployeeNumber, fullName = "Changed Master", phoneNumber = "90000000", nationality = "XX", organization = "MOD", rankGrade = "B", employmentInformation = "Changed" };
+        Assert.Equal(HttpStatusCode.OK, (await Send(client, HttpMethod.Put, $"/api/v1/borrowers/{setup.BorrowerId}", borrowerResponse.Headers.ETag!.Tag.Trim('"'), changedBorrower)).StatusCode);
+
+        var firstEval = await Send(client, HttpMethod.Post, $"/api/v1/loan-applications/{firstId}/evaluate-eligibility", firstResponse.Headers.ETag!.Tag.Trim('"'), new { });
+        Assert.Equal(HttpStatusCode.OK, firstEval.StatusCode);
+        var firstBody = await Read(firstEval);
+        Assert.True(firstBody.GetProperty("eligibilityDecision").GetProperty("isEligible").GetBoolean());
+        Assert.Equal("OM", firstBody.GetProperty("borrowerSnapshot").GetProperty("nationality").GetString());
+        Assert.Equal("A", firstBody.GetProperty("borrowerSnapshot").GetProperty("rankGrade").GetString());
+
+        var firstSubmit = await Send(client, HttpMethod.Post, $"/api/v1/loan-applications/{firstId}/submit", firstEval.Headers.ETag!.Tag.Trim('"'), new { });
+        Assert.Equal(HttpStatusCode.OK, firstSubmit.StatusCode);
+
+        var secondResponse = await client.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(setup));
+        Assert.Equal(HttpStatusCode.Created, secondResponse.StatusCode);
+        var second = await Read(secondResponse);
+        var secondId = second.GetProperty("loanApplicationId").GetGuid();
+
+        var secondEval = await Send(client, HttpMethod.Post, $"/api/v1/loan-applications/{secondId}/evaluate-eligibility", secondResponse.Headers.ETag!.Tag.Trim('"'), new { });
+        Assert.Equal(HttpStatusCode.OK, secondEval.StatusCode);
+        var secondDecision = (await Read(secondEval)).GetProperty("eligibilityDecision");
+        Assert.False(secondDecision.GetProperty("isEligible").GetBoolean());
+        Assert.True(secondDecision.GetProperty("observedConflictingApplicationCount").GetInt32() >= 1);
+        Assert.Contains(secondDecision.GetProperty("ruleResults").EnumerateArray(), x => x.GetProperty("reasonCode").GetString() == "eligibility.applicationCountExceeded");
+
+        var ineligibleSubmit = await Send(client, HttpMethod.Post, $"/api/v1/loan-applications/{secondId}/submit", secondEval.Headers.ETag!.Tag.Trim('"'), new { });
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, ineligibleSubmit.StatusCode);
+        Assert.Equal("loanApplications.ineligible", (await Read(ineligibleSubmit)).GetProperty("errorCode").GetString());
+
+        var thirdResponse = await client.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(setup));
+        var third = await Read(thirdResponse);
+        var thirdId = third.GetProperty("loanApplicationId").GetGuid();
+        var noEligibility = await Send(client, HttpMethod.Post, $"/api/v1/loan-applications/{thirdId}/submit", thirdResponse.Headers.ETag!.Tag.Trim('"'), new { });
+        Assert.Equal(HttpStatusCode.Conflict, noEligibility.StatusCode);
+        Assert.Equal("loanApplications.eligibilityRequired", (await Read(noEligibility)).GetProperty("errorCode").GetString());
+
+        var productResponse = await client.GetAsync($"/api/v1/loan-products/{setup.ProductId}");
+        Assert.Equal(HttpStatusCode.OK, (await Send(client, HttpMethod.Post, $"/api/v1/loan-products/{setup.ProductId}/deactivate", productResponse.Headers.ETag!.Tag.Trim('"'), new { })).StatusCode);
+
+        var freshSetup = await SetupAvailableVersion(client);
+        var productCheckResponse = await client.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(freshSetup));
+        var productCheck = await Read(productCheckResponse);
+        var productCheckId = productCheck.GetProperty("loanApplicationId").GetGuid();
+        var originalSnapshot = productCheck.GetProperty("productSnapshot").GetRawText();
+        var productCheckEval = await Send(client, HttpMethod.Post, $"/api/v1/loan-applications/{productCheckId}/evaluate-eligibility", productCheckResponse.Headers.ETag!.Tag.Trim('"'), new { });
+        var productDetail = await client.GetAsync($"/api/v1/loan-products/{freshSetup.ProductId}");
+        Assert.Equal(HttpStatusCode.OK, (await Send(client, HttpMethod.Post, $"/api/v1/loan-products/{freshSetup.ProductId}/deactivate", productDetail.Headers.ETag!.Tag.Trim('"'), new { })).StatusCode);
+        var unavailableSubmit = await Send(client, HttpMethod.Post, $"/api/v1/loan-applications/{productCheckId}/submit", productCheckEval.Headers.ETag!.Tag.Trim('"'), new { });
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, unavailableSubmit.StatusCode);
+        Assert.Equal("loanApplications.productVersionUnavailable", (await Read(unavailableSubmit)).GetProperty("errorCode").GetString());
+        var reloaded = await Read(await client.GetAsync($"/api/v1/loan-applications/{productCheckId}"));
+        Assert.Equal("Draft", reloaded.GetProperty("status").GetString());
+        Assert.Equal(originalSnapshot, reloaded.GetProperty("productSnapshot").GetRawText());
+    }
+
     async Task<HttpClient> Administrator() { var client = fixture.Factory.CreateClient(new() { HandleCookies = true }); Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/login", new { username = IdentityAccessIntegrationTests.Admin, password = IdentityAccessIntegrationTests.Password })).StatusCode); return client; }
     static async Task<Setup> SetupAvailableVersion(HttpClient client) { var suffix = Guid.NewGuid().ToString("N"); var civil = $"C-{suffix}"; var employee = $"E-{suffix}"; var name = $"Original {suffix}"; var borrower = await Read(await client.PostAsJsonAsync("/api/v1/borrowers", new { civilNumber = civil, employeeNumber = employee, fullName = name, phoneNumber = "90000000", nationality = "OM", organization = "MOD", rankGrade = "A", employmentInformation = "Active" })); var productName = $"Product {suffix}"; var product = await Read(await client.PostAsJsonAsync("/api/v1/loan-products", new { name = productName })); var productId = product.GetProperty("loanProductId").GetGuid(); var draft = await CreateDraft(client, productId, DateOnly.FromDateTime(DateTime.UtcNow)); await Publish(client, productId, draft); return new(borrower.GetProperty("borrowerId").GetGuid(), productId, draft.VersionId, name, productName, civil, employee); }
     static object ApplicationInput(Setup setup) => new { borrowerId = setup.BorrowerId, loanProductVersionId = setup.VersionId, requestedAmount = 500m, financingType = "Build" };
