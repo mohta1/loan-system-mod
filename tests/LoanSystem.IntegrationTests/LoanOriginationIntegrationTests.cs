@@ -329,6 +329,142 @@ public sealed class LoanOriginationIntegrationTests(IdentitySqlFixture fixture)
         Assert.Contains(decision.GetProperty("ruleResults").EnumerateArray(), x => x.GetProperty("reasonCode").GetString() == "eligibility.applicationCountExceeded");
     }
 
+
+    [Fact]
+    public async Task Committee_decisions_persist_enforce_state_concurrency_permissions_and_count()
+    {
+        using var admin = await Administrator();
+
+        async Task<(Setup Setup, Guid Id, string ETag, JsonElement UnitApproval)> UnitApproved()
+        {
+            var setup = await SetupAvailableVersion(admin);
+            var created = await admin.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(setup));
+            var createdBody = await Read(created);
+            var id = createdBody.GetProperty("loanApplicationId").GetGuid();
+            var evaluated = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{id}/evaluate-eligibility", created.Headers.ETag!.Tag.Trim('"'), new { });
+            var submitted = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{id}/submit", evaluated.Headers.ETag!.Tag.Trim('"'), new { });
+            var unit = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{id}/unit-decision", submitted.Headers.ETag!.Tag.Trim('"'), new { decision = "approve", comment = " unit context " });
+            Assert.Equal(HttpStatusCode.OK, unit.StatusCode);
+            var body = await Read(unit);
+            return (setup, id, unit.Headers.ETag!.Tag.Trim('"'), body.GetProperty("unitApproval").Clone());
+        }
+
+        var approve = await UnitApproved();
+        var missing = await admin.PostAsJsonAsync($"/api/v1/loan-applications/{approve.Id}/committee-decision", new { decision = "approve" });
+        Assert.Equal((HttpStatusCode)428, missing.StatusCode);
+        Assert.Equal("loanApplications.preconditionRequired", (await Read(missing)).GetProperty("errorCode").GetString());
+
+        var malformed = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{approve.Id}/committee-decision", "bad", new { decision = "approve" });
+        Assert.Equal((HttpStatusCode)428, malformed.StatusCode);
+        Assert.Equal("loanApplications.preconditionRequired", (await Read(malformed)).GetProperty("errorCode").GetString());
+
+        var invalid = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{approve.Id}/committee-decision", approve.ETag, new { decision = "other" });
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Equal("loanApplications.invalidCommitteeDecision", (await Read(invalid)).GetProperty("errorCode").GetString());
+
+        foreach (var reason in new string?[] { null, "", "   " })
+        {
+            var response = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{approve.Id}/committee-decision", approve.ETag, new { decision = "reject", comment = reason });
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("loanApplications.rejectionReasonRequired", (await Read(response)).GetProperty("errorCode").GetString());
+        }
+
+        var approved = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{approve.Id}/committee-decision", approve.ETag, new { decision = "approve", comment = " committee ok " });
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        var approvedBody = await Read(approved);
+        Assert.Equal("CommitteeApproved", approvedBody.GetProperty("status").GetString());
+        Assert.Equal("Approved", approvedBody.GetProperty("committeeApproval").GetProperty("decision").GetString());
+        Assert.Equal("committee ok", approvedBody.GetProperty("committeeApproval").GetProperty("comment").GetString());
+        Assert.Equal(approve.UnitApproval.GetProperty("actorUserId").GetGuid(), approvedBody.GetProperty("unitApproval").GetProperty("actorUserId").GetGuid());
+        Assert.Equal(approve.UnitApproval.GetProperty("comment").GetString(), approvedBody.GetProperty("unitApproval").GetProperty("comment").GetString());
+
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<LoanOriginationDbContext>();
+            var stored = await db.LoanApplications.AsNoTracking().SingleAsync(x => x.Id == approve.Id);
+            Assert.Equal(LoanApplicationStatus.CommitteeApproved, stored.Status);
+            Assert.Equal(CommitteeDecision.Approved, stored.CommitteeApproval!.Decision);
+            Assert.Equal("committee ok", stored.CommitteeApproval.Comment);
+            Assert.NotNull(stored.UnitApproval);
+        }
+
+        var second = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{approve.Id}/committee-decision", approved.Headers.ETag!.Tag.Trim('"'), new { decision = "approve" });
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        Assert.Equal("loanApplications.notUnitApproved", (await Read(second)).GetProperty("errorCode").GetString());
+
+        var stale = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{approve.Id}/committee-decision", approve.ETag, new { decision = "approve" });
+        Assert.Equal(HttpStatusCode.PreconditionFailed, stale.StatusCode);
+        Assert.Equal("loanApplications.concurrencyConflict", (await Read(stale)).GetProperty("errorCode").GetString());
+
+        var reject = await UnitApproved();
+        var rejected = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{reject.Id}/committee-decision", reject.ETag, new { decision = "reject", comment = " incomplete " });
+        Assert.Equal(HttpStatusCode.OK, rejected.StatusCode);
+        var rejectedBody = await Read(rejected);
+        Assert.Equal("Rejected", rejectedBody.GetProperty("status").GetString());
+        Assert.Equal("Rejected", rejectedBody.GetProperty("committeeApproval").GetProperty("decision").GetString());
+        Assert.Equal("incomplete", rejectedBody.GetProperty("committeeApproval").GetProperty("rejectionReason").GetString());
+        Assert.NotEqual(JsonValueKind.Null, rejectedBody.GetProperty("rejectedAtUtc").ValueKind);
+
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<LoanOriginationDbContext>();
+            var stored = await db.LoanApplications.AsNoTracking().SingleAsync(x => x.Id == reject.Id);
+            Assert.Equal(CommitteeDecision.Rejected, stored.CommitteeApproval!.Decision);
+            Assert.Equal("incomplete", stored.CommitteeApproval.RejectionReason);
+            Assert.NotNull(stored.RejectedAtUtc);
+            Assert.NotNull(stored.UnitApproval);
+        }
+
+        var submittedSetup = await SetupAvailableVersion(admin);
+        var submittedCreated = await admin.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(submittedSetup));
+        var submittedBody = await Read(submittedCreated);
+        var submittedId = submittedBody.GetProperty("loanApplicationId").GetGuid();
+        var submittedEval = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{submittedId}/evaluate-eligibility", submittedCreated.Headers.ETag!.Tag.Trim('"'), new { });
+        var submitted = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{submittedId}/submit", submittedEval.Headers.ETag!.Tag.Trim('"'), new { });
+        var skipUnit = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{submittedId}/committee-decision", submitted.Headers.ETag!.Tag.Trim('"'), new { decision = "approve" });
+        Assert.Equal(HttpStatusCode.Conflict, skipUnit.StatusCode);
+        Assert.Equal("loanApplications.notUnitApproved", (await Read(skipUnit)).GetProperty("errorCode").GetString());
+
+        using var anonymous = fixture.Factory.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync($"/api/v1/loan-applications/{reject.Id}/committee-decision", new { decision = "approve" })).StatusCode);
+
+        var permissionTarget = await UnitApproved();
+        using var readOnly = await PermissionClient(admin, $"task09-read-{Guid.NewGuid():N}", "loanApplications.read");
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(readOnly, HttpMethod.Post, $"/api/v1/loan-applications/{permissionTarget.Id}/committee-decision", permissionTarget.ETag, new { decision = "approve" })).StatusCode);
+        using var unitOnly = await PermissionClient(admin, $"task09-unit-{Guid.NewGuid():N}", "loanApplications.unitApprove");
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(unitOnly, HttpMethod.Post, $"/api/v1/loan-applications/{permissionTarget.Id}/committee-decision", permissionTarget.ETag, new { decision = "approve" })).StatusCode);
+        using var committeeOnly = await PermissionClient(admin, $"task09-committee-{Guid.NewGuid():N}", "loanApplications.committeeApprove");
+        Assert.Equal(HttpStatusCode.OK, (await Send(committeeOnly, HttpMethod.Post, $"/api/v1/loan-applications/{permissionTarget.Id}/committee-decision", permissionTarget.ETag, new { decision = "approve" })).StatusCode);
+
+        var queueTarget = await UnitApproved();
+        var beforeQueue = await Read(await admin.GetAsync("/api/v1/loan-applications?status=UnitApproved&pageSize=100"));
+        Assert.Contains(beforeQueue.GetProperty("items").EnumerateArray(), x => x.GetProperty("loanApplicationId").GetGuid() == queueTarget.Id);
+        var queueApproved = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{queueTarget.Id}/committee-decision", queueTarget.ETag, new { decision = "approve" });
+        Assert.Equal(HttpStatusCode.OK, queueApproved.StatusCode);
+        var afterQueue = await Read(await admin.GetAsync("/api/v1/loan-applications?status=UnitApproved&pageSize=100"));
+        Assert.DoesNotContain(afterQueue.GetProperty("items").EnumerateArray(), x => x.GetProperty("loanApplicationId").GetGuid() == queueTarget.Id);
+        var committeeQueue = await Read(await admin.GetAsync("/api/v1/loan-applications?status=CommitteeApproved&pageSize=100"));
+        Assert.Contains(committeeQueue.GetProperty("items").EnumerateArray(), x => x.GetProperty("loanApplicationId").GetGuid() == queueTarget.Id);
+
+        var countSetup = await SetupAvailableVersion(admin);
+        var firstResponse = await admin.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(countSetup));
+        var firstBody = await Read(firstResponse);
+        var firstId = firstBody.GetProperty("loanApplicationId").GetGuid();
+        var firstEval = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{firstId}/evaluate-eligibility", firstResponse.Headers.ETag!.Tag.Trim('"'), new { });
+        var firstSubmit = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{firstId}/submit", firstEval.Headers.ETag!.Tag.Trim('"'), new { });
+        var firstUnit = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{firstId}/unit-decision", firstSubmit.Headers.ETag!.Tag.Trim('"'), new { decision = "approve" });
+        var firstCommittee = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{firstId}/committee-decision", firstUnit.Headers.ETag!.Tag.Trim('"'), new { decision = "approve" });
+        Assert.Equal(HttpStatusCode.OK, firstCommittee.StatusCode);
+
+        var secondResponse = await admin.PostAsJsonAsync("/api/v1/loan-applications", ApplicationInput(countSetup));
+        var secondBody = await Read(secondResponse);
+        var secondId = secondBody.GetProperty("loanApplicationId").GetGuid();
+        var secondEval = await Send(admin, HttpMethod.Post, $"/api/v1/loan-applications/{secondId}/evaluate-eligibility", secondResponse.Headers.ETag!.Tag.Trim('"'), new { });
+        var decision = (await Read(secondEval)).GetProperty("eligibilityDecision");
+        Assert.False(decision.GetProperty("isEligible").GetBoolean());
+        Assert.Contains(decision.GetProperty("ruleResults").EnumerateArray(), x => x.GetProperty("reasonCode").GetString() == "eligibility.applicationCountExceeded");
+    }
+
     async Task<HttpClient> Administrator() { var client = fixture.Factory.CreateClient(new() { HandleCookies = true }); Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/login", new { username = IdentityAccessIntegrationTests.Admin, password = IdentityAccessIntegrationTests.Password })).StatusCode); return client; }
     static async Task<Setup> SetupAvailableVersion(HttpClient client) { var suffix = Guid.NewGuid().ToString("N"); var civil = $"C-{suffix}"; var employee = $"E-{suffix}"; var name = $"Original {suffix}"; var borrower = await Read(await client.PostAsJsonAsync("/api/v1/borrowers", new { civilNumber = civil, employeeNumber = employee, fullName = name, phoneNumber = "90000000", nationality = "OM", organization = "MOD", rankGrade = "A", employmentInformation = "Active" })); var productName = $"Product {suffix}"; var product = await Read(await client.PostAsJsonAsync("/api/v1/loan-products", new { name = productName })); var productId = product.GetProperty("loanProductId").GetGuid(); var draft = await CreateDraft(client, productId, DateOnly.FromDateTime(DateTime.UtcNow)); await Publish(client, productId, draft); return new(borrower.GetProperty("borrowerId").GetGuid(), productId, draft.VersionId, name, productName, civil, employee); }
     static object ApplicationInput(Setup setup) => new { borrowerId = setup.BorrowerId, loanProductVersionId = setup.VersionId, requestedAmount = 500m, financingType = "Build" };
