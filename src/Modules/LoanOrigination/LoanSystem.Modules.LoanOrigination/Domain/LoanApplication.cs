@@ -1,10 +1,13 @@
 using System.Text.Json.Serialization;
 namespace LoanSystem.Modules.LoanOrigination.Domain;
 
-public enum LoanApplicationStatus { Draft, Submitted, UnitApproved, Rejected }
+public enum LoanApplicationStatus { Draft, Submitted, UnitApproved, CommitteeApproved, Rejected }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum UnitDecision { Approved, Rejected }
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CommitteeDecision { Approved, Rejected }
 public sealed record UnitApprovalDecision(UnitDecision Decision, Guid ActorUserId, DateTimeOffset DecidedAtUtc, string? Comment, string? RejectionReason);
+public sealed record CommitteeApprovalDecision(CommitteeDecision Decision, Guid ActorUserId, DateTimeOffset DecidedAtUtc, string? Comment, string? RejectionReason);
 public interface ILoanApplicationDomainEvent;
 public sealed record BorrowerSnapshot(string CivilNumber, string? EmployeeNumber, string FullName, string? PhoneNumber, string Nationality, string Organization, string? RankGrade, string? EmploymentInformation, string Status);
 public sealed record ProductRankGradeRuleSnapshot(string RankGrade, decimal MaximumAmount);
@@ -14,6 +17,7 @@ public sealed record EligibilityRuleResult(string Rule, bool Passed, string Reas
 public sealed record EligibilityDecision(bool IsEligible, DateTimeOffset EvaluatedAtUtc, Guid AppliedLoanProductVersionId, int AppliedProductVersionNumber, decimal RequestedAmountAtEvaluation, string FinancingTypeAtEvaluation, decimal PermittedAmount, int ObservedConflictingApplicationCount, int MaximumApplicationCount, IReadOnlyList<EligibilityRuleResult> RuleResults);
 public sealed record LoanApplicationSubmitted(Guid LoanApplicationId, Guid BorrowerId, Guid LoanProductVersionId, DateTimeOffset SubmittedAtUtc) : ILoanApplicationDomainEvent;
 public sealed record UnitApprovalGranted(Guid LoanApplicationId, Guid ActorUserId, DateTimeOffset Timestamp) : ILoanApplicationDomainEvent;
+public sealed record CommitteeApprovalGranted(Guid LoanApplicationId, Guid ActorUserId, DateTimeOffset Timestamp) : ILoanApplicationDomainEvent;
 public sealed record LoanApplicationRejected(Guid LoanApplicationId, Guid ActorUserId, DateTimeOffset Timestamp, string Reason, string Stage = "Unit") : ILoanApplicationDomainEvent;
 
 public static class EligibilityReasonCodes
@@ -67,6 +71,7 @@ public sealed class LoanApplication
     public DateTimeOffset UpdatedAtUtc { get; private set; }
     public DateTimeOffset? SubmittedAtUtc { get; private set; }
     public UnitApprovalDecision? UnitApproval { get; private set; }
+    public CommitteeApprovalDecision? CommitteeApproval { get; private set; }
     public DateTimeOffset? RejectedAtUtc { get; private set; }
     public byte[] RowVersion { get; private set; } = [];
     public IReadOnlyList<ILoanApplicationDomainEvent> DomainEvents => _domainEvents;
@@ -82,6 +87,11 @@ public sealed class LoanApplication
     { EnsureSubmitted(); EnsureActor(actorUserId); var at = now ?? DateTimeOffset.UtcNow; UnitApproval = new(UnitDecision.Approved, actorUserId, at, string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(), null); Status = LoanApplicationStatus.UnitApproved; UpdatedAtUtc = at; var fact = new UnitApprovalGranted(Id, actorUserId, at); _domainEvents.Add(fact); return fact; }
     public LoanApplicationRejected RejectByUnit(Guid actorUserId, string? reason, DateTimeOffset? now = null)
     { EnsureSubmitted(); EnsureActor(actorUserId); if (string.IsNullOrWhiteSpace(reason)) throw new RejectionReasonRequiredException(); var at = now ?? DateTimeOffset.UtcNow; var trimmed = reason.Trim(); UnitApproval = new(UnitDecision.Rejected, actorUserId, at, null, trimmed); RejectedAtUtc = at; Status = LoanApplicationStatus.Rejected; UpdatedAtUtc = at; var fact = new LoanApplicationRejected(Id, actorUserId, at, trimmed); _domainEvents.Add(fact); return fact; }
+    public CommitteeApprovalGranted ApproveByCommittee(Guid actorUserId, string? comment = null, DateTimeOffset? now = null)
+    { EnsureUnitApproved(); EnsureActor(actorUserId); var at = now ?? DateTimeOffset.UtcNow; CommitteeApproval = new(CommitteeDecision.Approved, actorUserId, at, string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(), null); Status = LoanApplicationStatus.CommitteeApproved; UpdatedAtUtc = at; var fact = new CommitteeApprovalGranted(Id, actorUserId, at); _domainEvents.Add(fact); return fact; }
+    public LoanApplicationRejected RejectByCommittee(Guid actorUserId, string? reason, DateTimeOffset? now = null)
+    { EnsureUnitApproved(); EnsureActor(actorUserId); if (string.IsNullOrWhiteSpace(reason)) throw new RejectionReasonRequiredException(); var at = now ?? DateTimeOffset.UtcNow; var trimmed = reason.Trim(); CommitteeApproval = new(CommitteeDecision.Rejected, actorUserId, at, null, trimmed); RejectedAtUtc = at; Status = LoanApplicationStatus.Rejected; UpdatedAtUtc = at; var fact = new LoanApplicationRejected(Id, actorUserId, at, trimmed, "Committee"); _domainEvents.Add(fact); return fact; }
+    private void EnsureUnitApproved() { if (Status != LoanApplicationStatus.UnitApproved) throw new LoanApplicationStateException(); }
     private void EnsureSubmitted() { if (Status != LoanApplicationStatus.Submitted) throw new LoanApplicationStateException(); }
     private static void EnsureActor(Guid actorUserId) { if (actorUserId == Guid.Empty) throw new InvalidActorException(); }
     private void EnsureDraft() { if (Status != LoanApplicationStatus.Draft) throw new LoanApplicationStateException(); }
