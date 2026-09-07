@@ -224,3 +224,6 @@ TestResults/
 # Python
 __pycache__/
 *.py[cod]
+
+# Local UI review captures (generated)
+docs/ui-review/
