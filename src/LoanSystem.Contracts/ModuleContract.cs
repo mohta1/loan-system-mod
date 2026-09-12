@@ -18,3 +18,9 @@ public interface ILoanProductsModule : IModuleContract { Task<LoanProductVersion
 
 public sealed record BorrowerContract(Guid BorrowerId, string CivilNumber, string? EmployeeNumber, string FullName, string? PhoneNumber, string Nationality, string Organization, string? RankGrade, string? EmploymentInformation, bool IsActive);
 public interface IBorrowersModule : IModuleContract { Task<BorrowerContract?> GetAsync(Guid borrowerId, CancellationToken cancellationToken = default); }
+
+public sealed record DocumentReferenceContract(Guid DocumentId, string FileName, string ContentType, long Size, bool IsActive);
+public interface IDocumentsModule : IModuleContract
+{
+    Task<DocumentReferenceContract?> GetAccessibleAsync(Guid documentId, Guid actorUserId, CancellationToken cancellationToken = default);
+}
