@@ -18,10 +18,12 @@ public sealed class LoanAccountServiceTests
         var borrowerId = Guid.NewGuid();
         var productId = Guid.NewGuid();
         var versionId = Guid.NewGuid();
-        var message = new LoanApplicationApprovedV1(eventId, occurredAt, "corr-1", sourceApplicationId, borrowerId, productId, versionId, 50000m, "omr", " Build ", approvedAt);
+        var actorId = Guid.NewGuid();
+        var message = new LoanApplicationApprovedV1(eventId, occurredAt, "corr-1", sourceApplicationId, borrowerId, productId, versionId, 50000m, "omr", " Build ", actorId, approvedAt);
 
         await service.ConsumeAsync(message);
 
+        Assert.Equal(actorId, message.ActorUserId);
         Assert.NotNull(store.Opened);
         Assert.Equal(sourceApplicationId, store.Opened.SourceApplicationId);
         Assert.Equal(borrowerId, store.Opened.BorrowerId);
