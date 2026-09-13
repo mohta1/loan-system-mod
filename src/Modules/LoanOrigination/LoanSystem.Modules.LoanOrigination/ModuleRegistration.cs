@@ -21,6 +21,7 @@ public static class ModuleRegistration
         services.AddScoped<IPropertyInspectionStore>(provider => provider.GetRequiredService<LoanOriginationDbContext>());
         services.AddScoped<LoanApplicationService>();
         services.AddScoped<PropertyInspectionService>();
+        services.AddHostedService<LoanApprovalOutboxDispatcher>();
         return services;
     }
 
