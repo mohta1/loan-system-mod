@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { borrowersApi } from '../api/borrowers';
-import { loanApplicationsApi } from '../api/loanApplications';
+import { loanApplicationsApi, LoanApplication } from '../api/loanApplications';
 import { LoanAccount, loansApi } from '../api/loans';
 import { hasPermission } from '../app/permissions';
 
@@ -12,13 +12,13 @@ function TechnicalReference({ value }: { value: string }) {
   return <small><code title={value}>{compactId(value)}</code></small>;
 }
 
-export function LoanAccountsPage({ permissions = [] }: { permissions?: string[] }) {
+export function LoanAccountsPage({ permissions = [], onOpenApplication }: { permissions?: string[]; onOpenApplication?: (application: LoanApplication) => void }) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<LoanAccount | null>(null);
   const [search, setSearch] = useState('');
   const q = useQuery({ queryKey: ['loans', search], queryFn: () => loansApi.list(search ? `sourceApplicationId=${encodeURIComponent(search)}` : '') });
 
-  if (selected) return <LoanDetails loan={selected} permissions={permissions} back={() => setSelected(null)} />;
+  if (selected) return <LoanDetails loan={selected} permissions={permissions} onOpenApplication={onOpenApplication} back={() => setSelected(null)} />;
 
   return <section>
     <header className="page-header"><h1>{t('loanAccounts')}</h1></header>
@@ -37,7 +37,7 @@ export function LoanAccountsPage({ permissions = [] }: { permissions?: string[] 
   </section>;
 }
 
-function LoanDetails({ loan, permissions, back }: { loan: LoanAccount; permissions: string[]; back: () => void }) {
+function LoanDetails({ loan, permissions, onOpenApplication, back }: { loan: LoanAccount; permissions: string[]; onOpenApplication?: (application: LoanApplication) => void; back: () => void }) {
   const { t } = useTranslation();
   const q = useQuery({ queryKey: ['loan', loan.loanId], queryFn: () => loansApi.get(loan.loanId), initialData: loan });
   const canReadBorrower = hasPermission(permissions, 'borrowers.read');
@@ -59,6 +59,7 @@ function LoanDetails({ loan, permissions, back }: { loan: LoanAccount; permissio
           <strong>{application.data.productSnapshot.productName}</strong>
           <div>{t('financingType')}: {application.data.financingType} · {t('status')}: {t(application.data.status.toLowerCase())}</div>
           <div>{t('requestedAmount')}: {application.data.requestedAmount} {application.data.currency}</div>
+          {onOpenApplication && <button type="button" className="link" onClick={() => onOpenApplication(application.data!)}>{t('viewApplication')}</button>}
         </> : null}
         <div>{t('applicationId')}: <TechnicalReference value={x.sourceApplicationId} /></div>
       </dd>
