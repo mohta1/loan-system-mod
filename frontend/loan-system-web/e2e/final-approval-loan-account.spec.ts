@@ -29,7 +29,7 @@ test('TASK-11 finally approves and opens exactly one loan account', async ({ pag
     const submitted = await json(`/api/v1/loan-applications/${application.body.loanApplicationId}/submit`, { method: 'POST', headers: { 'If-Match': evaluated.etag } });
     const unit = await json(`/api/v1/loan-applications/${application.body.loanApplicationId}/unit-decision`, { method: 'POST', headers: { 'If-Match': submitted.etag }, body: JSON.stringify({ decision: 'approve' }) });
     await json(`/api/v1/loan-applications/${application.body.loanApplicationId}/committee-decision`, { method: 'POST', headers: { 'If-Match': unit.etag }, body: JSON.stringify({ decision: 'approve' }) });
-    return { borrowerName: borrower.body.fullName, applicationId: application.body.loanApplicationId as string };
+    return { borrowerName: borrower.body.fullName as string, productName: product.body.name as string, applicationId: application.body.loanApplicationId as string };
   }, unique);
 
   await page.getByRole('button', { name: 'Inspections', exact: true }).click();
@@ -99,17 +99,18 @@ test('TASK-11 finally approves and opens exactly one loan account', async ({ pag
   }, setup.applicationId), { timeout: 10000 }).toBe(1);
 
   await page.getByRole('button', { name: 'Loan Accounts', exact: true }).click();
-  const sourceApplicationFilter = page.getByLabel('Source Application', { exact: true });
-  await sourceApplicationFilter.fill(setup.applicationId);
-  const sourceApplicationRow = page.locator('tbody tr').filter({ hasText: setup.applicationId });
-  await expect(sourceApplicationRow).toHaveCount(1);
-  await sourceApplicationRow.click();
-  await expect(page.getByText(setup.applicationId, { exact: true })).toBeVisible();
+  await page.getByLabel('Source Application', { exact: true }).fill(setup.applicationId);
+  const sourceApplicationReference = page.locator(`code[title="${setup.applicationId}"]`).first();
+  await expect(sourceApplicationReference).toBeVisible();
+  await sourceApplicationReference.locator('xpath=ancestor::tr').click();
+  await expect(page.getByTitle(setup.applicationId)).toBeVisible();
+  await expect(page.getByText(setup.borrowerName, { exact: true })).toBeVisible();
+  await expect(page.getByText(setup.productName, { exact: true })).toBeVisible();
   await expect(page.getByText('50000 OMR', { exact: true })).toHaveCount(2);
   await expect(page.getByText('0 OMR', { exact: true })).toHaveCount(4);
 
   await page.reload();
   await page.getByRole('button', { name: 'Loan Accounts', exact: true }).click();
   await page.getByLabel('Source Application', { exact: true }).fill(setup.applicationId);
-  await expect(page.locator('tbody tr').filter({ hasText: setup.applicationId })).toHaveCount(1);
+  await expect(page.locator(`code[title="${setup.applicationId}"]`).first()).toBeVisible();
 });
