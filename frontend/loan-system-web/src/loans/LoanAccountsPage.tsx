@@ -59,7 +59,7 @@ function LoanDetails({ loan, permissions, onOpenApplication, back }: { loan: Loa
           <strong>{application.data.productSnapshot.productName}</strong>
           <div>{t('financingType')}: {application.data.financingType} · {t('status')}: {t(application.data.status.toLowerCase())}</div>
           <div>{t('requestedAmount')}: {application.data.requestedAmount} {application.data.currency}</div>
-          {onOpenApplication && <button type="button" className="link" onClick={() => onOpenApplication(application.data!)}>{t('viewApplication')}</button>}
+          {onOpenApplication && <button type="button" className="link" onClick={() => onOpenApplication(application.data!)}>{t('applicationDetail')}</button>}
         </> : null}
         <div>{t('applicationId')}: <TechnicalReference value={x.sourceApplicationId} /></div>
       </dd>
