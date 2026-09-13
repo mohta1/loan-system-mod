@@ -33,8 +33,9 @@ test('TASK-10 completes inspection, documents and mortgage prerequisites', async
   }, unique);
 
   await page.getByRole('button', { name: 'Inspections', exact: true }).click();
-  await expect(page.getByText(setup.borrowerName, { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Create Inspection' }).click();
+  const pendingApplication = page.getByRole('article').filter({ hasText: setup.borrowerName });
+  await expect(pendingApplication).toBeVisible();
+  await pendingApplication.getByRole('button', { name: 'Create Inspection', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Property Inspection' })).toBeVisible();
 
   await page.getByLabel('Governorate').fill('Muscat');
