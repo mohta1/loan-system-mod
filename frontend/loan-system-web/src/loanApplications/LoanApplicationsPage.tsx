@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { borrowersApi } from '../api/borrowers';
@@ -18,12 +18,16 @@ const err = (e: unknown, t: (k: string) => string) =>
   e instanceof ApiError && e.errorCode === 'loanApplications.invalidFinancingType' ? t('invalidFinancingType') :
   t('loanApplicationError');
 
-export function LoanApplicationsPage({ permissions }: { permissions: string[] }) {
+export function LoanApplicationsPage({ permissions, initialApplication = null, onInitialApplicationConsumed }: { permissions: string[]; initialApplication?: LoanApplication | null; onInitialApplicationConsumed?: () => void }) {
   const { t } = useTranslation();
   const q = useQueryClient();
-  const [list, setList] = useState(true);
-  const [selected, setSelected] = useState<LoanApplication | null>(null);
+  const [list, setList] = useState(initialApplication === null);
+  const [selected, setSelected] = useState<LoanApplication | null>(initialApplication);
   const apps = useQuery({ queryKey: ['loanApplications'], queryFn: () => loanApplicationsApi.list() });
+
+  useEffect(() => {
+    if (initialApplication) onInitialApplicationConsumed?.();
+  }, [initialApplication, onInitialApplicationConsumed]);
 
   if (!list) {
     return <ApplicationForm initial={selected} permissions={permissions} close={() => {
