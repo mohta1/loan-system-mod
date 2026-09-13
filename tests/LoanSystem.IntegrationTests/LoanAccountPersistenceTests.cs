@@ -29,6 +29,7 @@ public sealed class LoanAccountPersistenceTests
         var productId = Guid.NewGuid();
         var productVersionId = Guid.NewGuid();
         var eventId = Guid.NewGuid();
+        var actorId = Guid.NewGuid();
         var occurredAt = DateTimeOffset.UtcNow;
         var service = new LoanAccountService(db);
 
@@ -43,6 +44,7 @@ public sealed class LoanAccountPersistenceTests
             50000m,
             "OMR",
             "Build",
+            actorId,
             occurredAt);
 
         await service.ConsumeAsync(first);
