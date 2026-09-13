@@ -91,6 +91,13 @@ test('TASK-11 finally approves and opens exactly one loan account', async ({ pag
   await expect(page.getByText(/Status:\s*Approved/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Final Approve', exact: true })).not.toBeVisible();
 
+  await expect.poll(async () => page.evaluate(async applicationId => {
+    const response = await fetch(`/api/v1/loans?sourceApplicationId=${encodeURIComponent(applicationId)}`);
+    if (!response.ok) return -1;
+    const body = await response.json();
+    return body.items.length;
+  }, setup.applicationId), { timeout: 10000 }).toBe(1);
+
   await page.getByRole('button', { name: 'Loan Accounts', exact: true }).click();
   const sourceApplicationFilter = page.getByLabel('Source Application', { exact: true });
   await sourceApplicationFilter.fill(setup.applicationId);
