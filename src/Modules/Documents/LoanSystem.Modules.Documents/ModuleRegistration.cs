@@ -24,6 +24,7 @@ public static class ModuleRegistration
         services.AddScoped<IDocumentAccessAuthorizer, UploaderDocumentAccessAuthorizer>();
         services.AddScoped<DocumentService>();
         services.AddScoped<IImportSourceDocumentStore, ImportSourceDocumentStore>();
+        services.AddScoped<IDocumentsModule, DocumentsModule>();
         return services;
     }
 
@@ -35,6 +36,15 @@ public static class ModuleRegistration
 
     public static async Task InitializeDocumentsAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     { using var scope = services.CreateScope(); await scope.ServiceProvider.GetRequiredService<DocumentsDbContext>().Database.MigrateAsync(cancellationToken); }
+}
+
+internal sealed class DocumentsModule(DocumentService documents) : IDocumentsModule
+{
+    public async Task<DocumentReferenceContract?> GetAccessibleAsync(Guid documentId, Guid actorUserId, CancellationToken cancellationToken = default)
+    {
+        var document = await documents.AuthorizedAsync(documentId, actorUserId, cancellationToken);
+        return document is null ? null : new(document.Id, document.FileName, document.ContentType, document.Size, document.Status == Domain.DocumentStatus.Active);
+    }
 }
 
 internal sealed class ImportSourceDocumentStore(DocumentService documents) : IImportSourceDocumentStore

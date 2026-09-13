@@ -18,14 +18,16 @@ public static class ModuleRegistration
         var connection = configuration.GetConnectionString("LoanSystem") ?? throw new InvalidOperationException("ConnectionStrings:LoanSystem is required.");
         services.AddDbContext<LoanOriginationDbContext>(options => options.UseSqlServer(connection));
         services.AddScoped<ILoanApplicationStore>(provider => provider.GetRequiredService<LoanOriginationDbContext>());
+        services.AddScoped<IPropertyInspectionStore>(provider => provider.GetRequiredService<LoanOriginationDbContext>());
         services.AddScoped<LoanApplicationService>();
+        services.AddScoped<PropertyInspectionService>();
         return services;
     }
 
     public static IEndpointRouteBuilder MapLoanOriginationModuleEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
-        LoanApplicationEndpoints.Map(endpoints); return endpoints;
+        LoanApplicationEndpoints.Map(endpoints); InspectionEndpoints.Map(endpoints); return endpoints;
     }
 
     public static async Task InitializeLoanOriginationAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
