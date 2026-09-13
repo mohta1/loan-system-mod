@@ -68,6 +68,12 @@ jobs:
           npx playwright test e2e/committee-approval.spec.ts
           npx playwright test e2e/committee-approval.spec.ts
           npx playwright test e2e/committee-approval.spec.ts
+      - name: Rerun TASK-10 inspection and mortgage three times against persistent runtime
+        working-directory: frontend/loan-system-web
+        run: |
+          npx playwright test e2e/inspection-mortgage.spec.ts
+          npx playwright test e2e/inspection-mortgage.spec.ts
+          npx playwright test e2e/inspection-mortgage.spec.ts
       - if: always()
         name: Capture Docker health diagnostics
         run: |

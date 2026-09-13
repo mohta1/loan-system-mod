@@ -5,23 +5,23 @@ public enum LoanApplicationStatus { Draft, Submitted, UnitApproved, CommitteeApp
 public enum InspectionPrerequisiteStatus { NotStarted, Pending, Approved, Rejected }
 public enum MortgageStatus { NotStarted, Pending, Completed, NotRequired, Released }
 public enum DocumentPrerequisiteStatus { NotStarted, Pending, Satisfied }
-public enum ApplicationDocumentType { Ownership, Survey, EngineeringDrawing, Other }
+public enum LoanApplicationDocumentType { Ownership, Survey, EngineeringDrawing, Other }
 public sealed record MortgageDecision(MortgageStatus Status, Guid ActorUserId, DateTimeOffset DecidedAtUtc, string? Reason, string? Comment);
-public sealed class ApplicationDocumentReference
+public sealed class LoanApplicationDocumentReference
 {
-    private ApplicationDocumentReference() { }
-    internal ApplicationDocumentReference(Guid applicationId, Guid documentId, ApplicationDocumentType type, DateTimeOffset at) { LoanApplicationId = applicationId; DocumentId = documentId; DocumentType = type; IsRequired = ApplicationDocumentPolicy.IsRequired(type); AttachedAtUtc = at; }
+    private LoanApplicationDocumentReference() { }
+    internal LoanApplicationDocumentReference(Guid applicationId, Guid documentId, LoanApplicationDocumentType type, DateTimeOffset at) { LoanApplicationId = applicationId; DocumentId = documentId; DocumentType = type; IsRequired = LoanDocumentPrerequisitePolicy.IsRequired(type); AttachedAtUtc = at; }
     public Guid LoanApplicationId { get; private set; }
     public Guid DocumentId { get; private set; }
-    public ApplicationDocumentType DocumentType { get; private set; }
+    public LoanApplicationDocumentType DocumentType { get; private set; }
     public bool IsRequired { get; private set; }
     public DateTimeOffset AttachedAtUtc { get; private set; }
 }
-public static class ApplicationDocumentPolicy
+public static class LoanDocumentPrerequisitePolicy
 {
-    public static IReadOnlySet<ApplicationDocumentType> RequiredTypes { get; } = new HashSet<ApplicationDocumentType> { ApplicationDocumentType.Ownership, ApplicationDocumentType.Survey, ApplicationDocumentType.EngineeringDrawing };
-    public static bool IsRequired(ApplicationDocumentType type) => RequiredTypes.Contains(type);
-    public static bool IsSatisfied(IEnumerable<ApplicationDocumentReference> documents) => RequiredTypes.All(type => documents.Any(x => x.DocumentType == type));
+    public static IReadOnlySet<LoanApplicationDocumentType> RequiredTypes { get; } = new HashSet<LoanApplicationDocumentType> { LoanApplicationDocumentType.Ownership, LoanApplicationDocumentType.Survey, LoanApplicationDocumentType.EngineeringDrawing };
+    public static bool IsRequired(LoanApplicationDocumentType type) => RequiredTypes.Contains(type);
+    public static bool IsSatisfied(IEnumerable<LoanApplicationDocumentReference> documents) => RequiredTypes.All(type => documents.Any(x => x.DocumentType == type));
 }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum UnitDecision { Approved, Rejected }
@@ -74,6 +74,7 @@ public static class LoanApplicationEligibilityEvaluator
 public sealed class LoanApplication
 {
     private readonly List<ILoanApplicationDomainEvent> _domainEvents = [];
+    private readonly List<LoanApplicationDocumentReference> _applicationDocuments = [];
     private LoanApplication() { }
     private LoanApplication(Guid id, Guid borrowerId, ProductSnapshot product, decimal amount, string financingType, BorrowerSnapshot borrower, DateTimeOffset created)
     { Id = id; BorrowerId = borrowerId; LoanProductId = product.LoanProductId; LoanProductVersionId = product.LoanProductVersionId; RequestedAmount = amount; Currency = product.Currency; FinancingType = financingType; Status = LoanApplicationStatus.Draft; BorrowerSnapshot = borrower; ProductSnapshot = product; CreatedAtUtc = UpdatedAtUtc = created; }
@@ -97,7 +98,7 @@ public sealed class LoanApplication
     public MortgageStatus MortgageStatus { get; private set; }
     public MortgageDecision? MortgageDecision { get; private set; }
     public DocumentPrerequisiteStatus DocumentPrerequisiteStatus { get; private set; }
-    public List<ApplicationDocumentReference> ApplicationDocuments { get; private set; } = [];
+    public IReadOnlyList<LoanApplicationDocumentReference> ApplicationDocuments => _applicationDocuments.AsReadOnly();
     public DateTimeOffset? RejectedAtUtc { get; private set; }
     public byte[] RowVersion { get; private set; } = [];
     public IReadOnlyList<ILoanApplicationDomainEvent> DomainEvents => _domainEvents;
@@ -120,13 +121,14 @@ public sealed class LoanApplication
     public void BeginPrerequisites(DateTimeOffset? now = null) { if (Status != LoanApplicationStatus.CommitteeApproved) throw new LoanApplicationStateException(); Status = LoanApplicationStatus.PrerequisitesPending; InspectionPrerequisiteStatus = global::LoanSystem.Modules.LoanOrigination.Domain.InspectionPrerequisiteStatus.Pending; MortgageStatus = global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.Pending; DocumentPrerequisiteStatus = global::LoanSystem.Modules.LoanOrigination.Domain.DocumentPrerequisiteStatus.Pending; UpdatedAtUtc = now ?? DateTimeOffset.UtcNow; }
     public void MarkInspectionApproved(DateTimeOffset? now = null) { EnsurePrerequisiteStage(); InspectionPrerequisiteStatus = global::LoanSystem.Modules.LoanOrigination.Domain.InspectionPrerequisiteStatus.Approved; UpdatedAtUtc = now ?? DateTimeOffset.UtcNow; EvaluateReadiness(); }
     public void MarkInspectionRejected(DateTimeOffset? now = null) { EnsurePrerequisiteStage(); InspectionPrerequisiteStatus = global::LoanSystem.Modules.LoanOrigination.Domain.InspectionPrerequisiteStatus.Rejected; Status = LoanApplicationStatus.PrerequisitesPending; UpdatedAtUtc = now ?? DateTimeOffset.UtcNow; }
-    public void AttachDocument(Guid documentId, ApplicationDocumentType type, DateTimeOffset? now = null) { EnsureApprovedInspection(); if (documentId == Guid.Empty) throw new InvalidDocumentTypeException(); if (ApplicationDocuments.Any(x => x.DocumentId == documentId)) throw new DocumentAlreadyAttachedException(); var at = now ?? DateTimeOffset.UtcNow; ApplicationDocuments.Add(new(Id, documentId, type, at)); RecalculateDocuments(); UpdatedAtUtc = at; }
-    public void DetachDocument(Guid documentId, DateTimeOffset? now = null) { EnsurePrerequisiteStage(); var found = ApplicationDocuments.SingleOrDefault(x => x.DocumentId == documentId) ?? throw new DocumentNotAttachedException(); ApplicationDocuments.Remove(found); RecalculateDocuments(); UpdatedAtUtc = now ?? DateTimeOffset.UtcNow; }
-    public void CompleteMortgage(Guid actor, string? comment = null, DateTimeOffset? now = null) { EnsureApprovedInspection(); EnsureActor(actor); var at = now ?? DateTimeOffset.UtcNow; MortgageStatus = global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.Completed; MortgageDecision = new(global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.Completed, actor, at, null, string.IsNullOrWhiteSpace(comment) ? null : comment.Trim()); UpdatedAtUtc = at; EvaluateReadiness(); }
-    public void WaiveMortgage(Guid actor, string? reason, string? comment = null, DateTimeOffset? now = null) { EnsureApprovedInspection(); EnsureActor(actor); if (string.IsNullOrWhiteSpace(reason)) throw new MortgageReasonRequiredException(); var at = now ?? DateTimeOffset.UtcNow; MortgageStatus = global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.NotRequired; MortgageDecision = new(global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.NotRequired, actor, at, reason.Trim(), string.IsNullOrWhiteSpace(comment) ? null : comment.Trim()); UpdatedAtUtc = at; EvaluateReadiness(); }
-    private void RecalculateDocuments() { DocumentPrerequisiteStatus = ApplicationDocumentPolicy.IsSatisfied(ApplicationDocuments) ? global::LoanSystem.Modules.LoanOrigination.Domain.DocumentPrerequisiteStatus.Satisfied : global::LoanSystem.Modules.LoanOrigination.Domain.DocumentPrerequisiteStatus.Pending; EvaluateReadiness(); }
+    public void AttachDocument(Guid documentId, LoanApplicationDocumentType type, DateTimeOffset? now = null) { EnsureApprovedInspection(); if (documentId == Guid.Empty) throw new InvalidDocumentTypeException(); if (_applicationDocuments.Any(x => x.DocumentId == documentId)) throw new DocumentAlreadyAttachedException(); var at = now ?? DateTimeOffset.UtcNow; _applicationDocuments.Add(new(Id, documentId, type, at)); RecalculateDocuments(); UpdatedAtUtc = at; }
+    public void DetachDocument(Guid documentId, DateTimeOffset? now = null) { EnsurePrerequisiteStage(); var found = _applicationDocuments.SingleOrDefault(x => x.DocumentId == documentId) ?? throw new DocumentNotAttachedException(); _applicationDocuments.Remove(found); RecalculateDocuments(); UpdatedAtUtc = now ?? DateTimeOffset.UtcNow; }
+    public void CompleteMortgage(Guid actor, string? comment = null, DateTimeOffset? now = null) { EnsureApprovedInspection(); EnsureMortgagePending(); EnsureActor(actor); var at = now ?? DateTimeOffset.UtcNow; MortgageStatus = global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.Completed; MortgageDecision = new(global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.Completed, actor, at, null, string.IsNullOrWhiteSpace(comment) ? null : comment.Trim()); UpdatedAtUtc = at; EvaluateReadiness(); }
+    public void WaiveMortgage(Guid actor, string? reason, string? comment = null, DateTimeOffset? now = null) { EnsureApprovedInspection(); EnsureMortgagePending(); EnsureActor(actor); if (string.IsNullOrWhiteSpace(reason)) throw new MortgageReasonRequiredException(); var at = now ?? DateTimeOffset.UtcNow; MortgageStatus = global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.NotRequired; MortgageDecision = new(global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.NotRequired, actor, at, reason.Trim(), string.IsNullOrWhiteSpace(comment) ? null : comment.Trim()); UpdatedAtUtc = at; EvaluateReadiness(); }
+    private void RecalculateDocuments() { DocumentPrerequisiteStatus = LoanDocumentPrerequisitePolicy.IsSatisfied(_applicationDocuments) ? global::LoanSystem.Modules.LoanOrigination.Domain.DocumentPrerequisiteStatus.Satisfied : global::LoanSystem.Modules.LoanOrigination.Domain.DocumentPrerequisiteStatus.Pending; EvaluateReadiness(); }
     private void EvaluateReadiness() { EnsurePrerequisiteStage(); Status = InspectionPrerequisiteStatus == global::LoanSystem.Modules.LoanOrigination.Domain.InspectionPrerequisiteStatus.Approved && DocumentPrerequisiteStatus == global::LoanSystem.Modules.LoanOrigination.Domain.DocumentPrerequisiteStatus.Satisfied && MortgageStatus is global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.Completed or global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.NotRequired ? LoanApplicationStatus.ReadyForFinalApproval : LoanApplicationStatus.PrerequisitesPending; }
     private void EnsurePrerequisiteStage() { if (Status is not (LoanApplicationStatus.PrerequisitesPending or LoanApplicationStatus.ReadyForFinalApproval)) throw new NotInPrerequisiteStageException(); }
+    private void EnsureMortgagePending() { if (MortgageStatus != global::LoanSystem.Modules.LoanOrigination.Domain.MortgageStatus.Pending) throw new MortgageAlreadyDecidedException(); }
     private void EnsureApprovedInspection() { EnsurePrerequisiteStage(); if (InspectionPrerequisiteStatus != global::LoanSystem.Modules.LoanOrigination.Domain.InspectionPrerequisiteStatus.Approved) throw new InspectionNotApprovedException(); }
     private void EnsureUnitApproved() { if (Status != LoanApplicationStatus.UnitApproved) throw new LoanApplicationStateException(); }
     private void EnsureSubmitted() { if (Status != LoanApplicationStatus.Submitted) throw new LoanApplicationStateException(); }
@@ -148,3 +150,4 @@ public sealed class DocumentAlreadyAttachedException : Exception;
 public sealed class DocumentNotAttachedException : Exception;
 public sealed class InvalidDocumentTypeException : Exception;
 public sealed class MortgageReasonRequiredException : Exception;
+public sealed class MortgageAlreadyDecidedException : Exception;
