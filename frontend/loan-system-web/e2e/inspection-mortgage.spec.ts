@@ -4,9 +4,22 @@ test('TASK-10 completes inspection, documents and mortgage prerequisites', async
   const username = process.env.E2E_ADMIN_USERNAME, password = process.env.E2E_ADMIN_PASSWORD;
   expect(username).toBeTruthy(); expect(password).toBeTruthy();
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  await page.goto('/'); await page.getByLabel('Username', { exact: true }).fill(username!); await page.getByLabel('Password', { exact: true }).fill(password!); await page.getByRole('button', { name: 'Login', exact: true }).click();
+
+  await page.goto('/');
+  await page.getByLabel('Username', { exact: true }).fill(username!);
+  await page.getByLabel('Password', { exact: true }).fill(password!);
+  await Promise.all([
+    page.waitForResponse(response => response.url().includes('/api/v1/auth/login') && response.status() === 204),
+    page.getByRole('button', { name: 'Login', exact: true }).click(),
+  ]);
+  await expect(page.getByRole('button', { name: 'Loan Applications', exact: true })).toBeVisible();
+
   const setup = await page.evaluate(async suffix => {
-    const json = async (url: string, init?: RequestInit) => { const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } }); if (!response.ok) throw new Error(`${url}: ${response.status}`); return { body: await response.json(), etag: response.headers.get('etag')! }; };
+    const json = async (url: string, init?: RequestInit) => {
+      const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } });
+      if (!response.ok) throw new Error(`${url}: ${response.status}`);
+      return { body: await response.json(), etag: response.headers.get('etag')! };
+    };
     const borrower = await json('/api/v1/borrowers', { method: 'POST', body: JSON.stringify({ civilNumber: `T10-C-${suffix}`, employeeNumber: `T10-E-${suffix}`, fullName: `TASK-10 Borrower ${suffix}`, phoneNumber: '90000000', nationality: 'OM', organization: 'MOD', rankGrade: 'A', employmentInformation: 'Active' }) });
     const product = await json('/api/v1/loan-products', { method: 'POST', body: JSON.stringify({ name: `TASK-10 Product ${suffix}` }) });
     const draft = await json(`/api/v1/loan-products/${product.body.loanProductId}/versions`, { method: 'POST', body: JSON.stringify({ maximumAmount: 100000, currency: 'OMR', deductionPercentage: 10, financingTypes: ['Build'], eligibilityConfiguration: { requiredNationality: 'OM', maximumApplicationCount: 1, rankGradeAmountRules: [{ rankGrade: 'A', maximumAmount: 100000 }], term: { maximumTermMonths: 240, dueDateRule: 'Monthly' } }, effectiveFrom: new Date().toISOString().slice(0, 10), effectiveTo: null }) });
@@ -16,12 +29,63 @@ test('TASK-10 completes inspection, documents and mortgage prerequisites', async
     const submitted = await json(`/api/v1/loan-applications/${application.body.loanApplicationId}/submit`, { method: 'POST', headers: { 'If-Match': evaluated.etag } });
     const unit = await json(`/api/v1/loan-applications/${application.body.loanApplicationId}/unit-decision`, { method: 'POST', headers: { 'If-Match': submitted.etag }, body: JSON.stringify({ decision: 'approve' }) });
     await json(`/api/v1/loan-applications/${application.body.loanApplicationId}/committee-decision`, { method: 'POST', headers: { 'If-Match': unit.etag }, body: JSON.stringify({ decision: 'approve' }) });
-    return { applicationId: application.body.loanApplicationId, borrowerName: borrower.body.fullName };
+    return { borrowerName: borrower.body.fullName };
   }, unique);
-  await page.getByRole('button', { name: 'Inspections', exact: true }).click(); await expect(page.getByText(setup.borrowerName)).toBeVisible(); await page.getByRole('button', { name: 'Create Inspection' }).click();
-  await page.getByLabel('Governorate').fill('Muscat'); await page.getByLabel('State').fill('Bawshar'); await page.getByLabel('Area', { exact: true }).fill('Khuwair'); await page.getByLabel('Inspection Date').fill(new Date().toISOString().slice(0, 10)); await page.getByLabel('Number of Floors').fill('2'); await page.getByLabel('Number of Rooms').fill('4'); await page.getByLabel('Property Area').fill('250'); await page.getByLabel('Property Condition').fill('Good'); await page.getByLabel('Inspection Result').fill('Suitable'); await page.getByLabel('Notes').fill('TASK-10 inspection');
-  await Promise.all([page.waitForResponse(r => r.url().includes('/inspections/') && r.request().method() === 'PUT'), page.getByRole('button', { name: 'Save', exact: true }).click()]); await page.getByRole('button', { name: 'Complete Inspection' }).click(); await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Approve', exact: true }).click(); await expect(page.getByText(/Approved/)).toBeVisible();
-  await page.getByRole('button', { name: 'Back', exact: true }).click(); await page.getByRole('button', { name: 'Loan Applications', exact: true }).click(); await page.getByText(setup.borrowerName, { exact: true }).click(); await expect(page.getByText(/Inspection:\s*Approved/)).toBeVisible();
-  for (const [value, name] of [['Ownership', 'ownership'], ['Survey', 'survey'], ['EngineeringDrawing', 'drawing']] as const) { await page.getByLabel('Document Type').selectOption(value); await page.getByLabel('Choose document').setInputFiles({ name: `${name}-${unique}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`TASK-10 ${name}`) }); await page.getByRole('button', { name: 'Upload', exact: true }).click(); await expect(page.getByText(value === 'EngineeringDrawing' ? 'Engineering Drawing' : `${value} Document`)).toBeVisible(); }
-  await expect(page.getByText(/Documents:\s*Satisfied/)).toBeVisible(); await page.getByRole('button', { name: 'Mark Mortgage Completed' }).click(); await expect(page.getByText(/Overall:\s*Ready for Final Approval/)).toBeVisible(); await page.reload(); await page.getByRole('button', { name: 'Loan Applications', exact: true }).click(); await page.getByText(setup.borrowerName, { exact: true }).click(); await expect(page.getByText(/Ready for Final Approval/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Inspections', exact: true }).click();
+  await expect(page.getByText(setup.borrowerName, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Create Inspection' }).click();
+  await expect(page.getByRole('heading', { name: 'Property Inspection' })).toBeVisible();
+
+  await page.getByLabel('Governorate').fill('Muscat');
+  await page.getByLabel('State').fill('Bawshar');
+  await page.getByLabel('Area', { exact: true }).fill('Khuwair');
+  await page.getByLabel('Inspection Date').fill(new Date().toISOString().slice(0, 10));
+  await page.getByLabel('Number of Floors').fill('2');
+  await page.getByLabel('Number of Rooms').fill('4');
+  await page.getByLabel('Property Area').fill('250');
+  await page.getByLabel('Property Condition').fill('Good');
+  await page.getByLabel('Inspection Result').fill('Suitable');
+  await page.getByLabel('Notes').fill('TASK-10 inspection');
+
+  const saveResponse = page.waitForResponse(response => response.url().includes('/api/v1/inspections/') && response.request().method() === 'PUT' && response.ok());
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await saveResponse;
+  await expect(page.getByRole('button', { name: 'Complete Inspection' })).toBeEnabled();
+
+  const completeResponse = page.waitForResponse(response => response.url().includes('/complete') && response.request().method() === 'POST' && response.ok());
+  await page.getByRole('button', { name: 'Complete Inspection' }).click();
+  await completeResponse;
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+
+  const approveResponse = page.waitForResponse(response => response.url().includes('/decision') && response.request().method() === 'POST' && response.ok());
+  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await approveResponse;
+  await expect(page.getByText(/Status:\s*Approved/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Loan Applications', exact: true }).click();
+  await page.getByText(setup.borrowerName, { exact: true }).click();
+  await expect(page.getByText(/Inspection:\s*Approved/)).toBeVisible();
+
+  for (const [value, name] of [['Ownership', 'ownership'], ['Survey', 'survey'], ['EngineeringDrawing', 'drawing']] as const) {
+    await page.getByLabel('Document Type').selectOption(value);
+    await page.getByLabel('Choose document').setInputFiles({ name: `${name}-${unique}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`TASK-10 ${name}`) });
+    const attachResponse = page.waitForResponse(response => response.url().includes('/documents') && response.request().method() === 'POST' && response.ok());
+    await page.getByRole('button', { name: 'Upload', exact: true }).click();
+    await attachResponse;
+    await expect(page.getByText(value === 'EngineeringDrawing' ? 'Engineering Drawing' : `${value} Document`)).toBeVisible();
+  }
+
+  await expect(page.getByText(/Documents:\s*Satisfied/)).toBeVisible();
+  const mortgageResponse = page.waitForResponse(response => response.url().includes('/mortgage/completed') && response.request().method() === 'POST' && response.ok());
+  await page.getByRole('button', { name: 'Mark Mortgage Completed' }).click();
+  await mortgageResponse;
+  await expect(page.getByText(/Overall:\s*Ready for Final Approval/)).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Loan Applications', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Loan Applications', exact: true }).click();
+  await page.getByText(setup.borrowerName, { exact: true }).click();
+  await expect(page.getByText(/Ready for Final Approval/)).toBeVisible();
 });
