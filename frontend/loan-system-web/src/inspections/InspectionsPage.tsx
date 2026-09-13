@@ -61,10 +61,23 @@ function InspectionForm({ initial, permissions, close }: { initial: Inspection; 
   const [inspection, setInspection] = useState(initial);
   const [values, setValues] = useState<InspectionInput>(initial);
   const [reason, setReason] = useState('');
-  const save = useMutation({ mutationFn: () => inspectionsApi.edit(inspection, values), onSuccess: setInspection });
+  const save = useMutation({
+    mutationFn: () => inspectionsApi.edit(inspection, values),
+    onSuccess: saved => { setInspection(saved); setValues(saved); },
+  });
   const complete = useMutation({ mutationFn: () => inspectionsApi.complete(inspection), onSuccess: setInspection });
   const decide = useMutation({ mutationFn: (decision: 'approve' | 'reject') => inspectionsApi.decision(inspection, decision, reason), onSuccess: setInspection });
   const finalized = inspection.status === 'Approved' || inspection.status === 'Rejected';
+  const dirty = values.governorate !== inspection.governorate
+    || values.state !== inspection.state
+    || values.area !== inspection.area
+    || values.numberOfFloors !== inspection.numberOfFloors
+    || values.numberOfRooms !== inspection.numberOfRooms
+    || values.propertyArea !== inspection.propertyArea
+    || values.propertyCondition !== inspection.propertyCondition
+    || values.inspectionDate !== inspection.inspectionDate
+    || values.result !== inspection.result
+    || (values.notes ?? '') !== (inspection.notes ?? '');
   const error = save.error ?? complete.error ?? decide.error;
   const field = (key: keyof InspectionInput, type = 'text') => <label>{t(key)}<input type={type} value={values[key] ?? ''} disabled={finalized} onChange={event => setValues({ ...values, [key]: type === 'number' ? Number(event.target.value) : event.target.value })} /></label>;
   return <section>
@@ -72,9 +85,9 @@ function InspectionForm({ initial, permissions, close }: { initial: Inspection; 
     <form onSubmit={(event: FormEvent) => { event.preventDefault(); save.mutate(); }}>
       {field('governorate')}{field('state')}{field('area')}{field('inspectionDate', 'date')}{field('numberOfFloors', 'number')}{field('numberOfRooms', 'number')}{field('propertyArea', 'number')}{field('propertyCondition')}{field('result')}
       <label>{t('notes')}<textarea value={values.notes ?? ''} disabled={finalized} onChange={event => setValues({ ...values, notes: event.target.value })} /></label>
-      {!finalized && hasPermission(permissions, 'inspections.create') && <><button>{t('save')}</button>{inspection.status === 'Draft' && <button type="button" onClick={() => complete.mutate()}>{t('completeInspection')}</button>}</>}
+      {!finalized && hasPermission(permissions, 'inspections.create') && <><button disabled={!dirty || save.isPending}>{t('save')}</button>{inspection.status === 'Draft' && <button type="button" disabled={dirty || save.isPending || complete.isPending} onClick={() => complete.mutate()}>{t('completeInspection')}</button>}</>}
     </form>
-    {inspection.status === 'Recorded' && hasPermission(permissions, 'inspections.approve') && <div><label>{t('rejectionReason')}<textarea value={reason} onChange={event => setReason(event.target.value)} /></label><button onClick={() => decide.mutate('approve')}>{t('approve')}</button><button disabled={!reason.trim()} onClick={() => decide.mutate('reject')}>{t('reject')}</button></div>}
+    {inspection.status === 'Recorded' && hasPermission(permissions, 'inspections.approve') && <div><label>{t('rejectionReason')}<textarea value={reason} onChange={event => setReason(event.target.value)} /></label><button disabled={decide.isPending} onClick={() => decide.mutate('approve')}>{t('approve')}</button><button disabled={!reason.trim() || decide.isPending} onClick={() => decide.mutate('reject')}>{t('reject')}</button></div>}
     {error !== undefined && <p role="alert">{t(errorKey(error))}</p>}
   </section>;
 }
