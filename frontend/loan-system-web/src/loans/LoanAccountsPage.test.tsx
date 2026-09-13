@@ -30,7 +30,7 @@ it('renders readable borrower and application details while keeping technical id
   expect(screen.getByText('Employee Number: EMP-7')).toBeInTheDocument();
   expect(await screen.findByText('Housing Build')).toBeInTheDocument();
   expect(screen.getByText(/Financing Type: Build/)).toBeInTheDocument();
-  expect(screen.getByTitle(loan.sourceApplicationId)).toHaveTextContent('87654321…123456');
+  expect(screen.getByTitle(loan.sourceApplicationId)).toHaveTextContent('87654321…23456');
   expect(screen.getAllByText('0 OMR')).toHaveLength(4);
   expect(screen.getAllByText('50000 OMR')).toHaveLength(2);
 });
