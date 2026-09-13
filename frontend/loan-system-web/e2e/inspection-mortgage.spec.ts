@@ -67,7 +67,8 @@ test('TASK-10 completes inspection, documents and mortgage prerequisites', async
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Loan Applications', exact: true }).click();
   await page.getByText(setup.borrowerName, { exact: true }).click();
-  await expect(page.getByText(/Inspection:\s*Approved/)).toBeVisible();
+  const prerequisites = page.getByRole('region', { name: 'Final Approval Prerequisites' });
+  await expect(prerequisites.getByText(/Inspection:\s*Approved/)).toBeVisible();
 
   for (const [value, name] of [['Ownership', 'ownership'], ['Survey', 'survey'], ['EngineeringDrawing', 'drawing']] as const) {
     await page.getByLabel('Document Type').selectOption(value);
@@ -75,18 +76,19 @@ test('TASK-10 completes inspection, documents and mortgage prerequisites', async
     const attachResponse = page.waitForResponse(response => response.url().includes('/documents') && response.request().method() === 'POST' && response.ok());
     await page.getByRole('button', { name: 'Upload', exact: true }).click();
     await attachResponse;
-    await expect(page.getByText(value === 'EngineeringDrawing' ? 'Engineering Drawing' : `${value} Document`)).toBeVisible();
+    const documentLabel = value === 'EngineeringDrawing' ? 'Engineering Drawing' : `${value} Document`;
+    await expect(prerequisites.getByRole('listitem').filter({ hasText: documentLabel })).toBeVisible();
   }
 
-  await expect(page.getByText(/Documents:\s*Satisfied/)).toBeVisible();
+  await expect(prerequisites.getByText(/Documents:\s*Satisfied/)).toBeVisible();
   const mortgageResponse = page.waitForResponse(response => response.url().includes('/mortgage/completed') && response.request().method() === 'POST' && response.ok());
   await page.getByRole('button', { name: 'Mark Mortgage Completed' }).click();
   await mortgageResponse;
-  await expect(page.getByText(/Overall:\s*Ready for Final Approval/)).toBeVisible();
+  await expect(prerequisites.getByText(/Overall:\s*Ready for Final Approval/)).toBeVisible();
 
   await page.reload();
   await expect(page.getByRole('button', { name: 'Loan Applications', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Loan Applications', exact: true }).click();
   await page.getByText(setup.borrowerName, { exact: true }).click();
-  await expect(page.getByText(/Ready for Final Approval/)).toBeVisible();
+  await expect(page.getByText(/Status:\s*Ready for Final Approval/)).toBeVisible();
 });
