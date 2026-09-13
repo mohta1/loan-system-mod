@@ -54,6 +54,8 @@ if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
     await app.Services.InitializeLoanProductsAsync();
 if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
     await app.Services.InitializeLoanOriginationAsync();
+if (app.Configuration.GetValue<bool>("Database:AutoMigrate"))
+    await app.Services.InitializeLoanAccountsAsync();
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {

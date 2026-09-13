@@ -8,7 +8,7 @@ namespace LoanSystem.Modules.LoanOrigination.Presentation;
 
 internal static class LoanApplicationEndpoints
 {
-    public static void Map(IEndpointRouteBuilder e) { var g = e.MapGroup("/api/v1/loan-applications").WithTags("Loan Applications"); g.MapGet("/", Search).RequireAuthorization(LoanApplicationPermissions.Read); g.MapGet("/{id:guid}", Get).RequireAuthorization(LoanApplicationPermissions.Read); g.MapPost("/", Create).RequireAuthorization(LoanApplicationPermissions.Create); g.MapPut("/{id:guid}", Edit).RequireAuthorization(LoanApplicationPermissions.Update); g.MapPost("/{id:guid}/evaluate-eligibility", Evaluate).RequireAuthorization(LoanApplicationPermissions.EvaluateEligibility); g.MapPost("/{id:guid}/submit", Submit).RequireAuthorization(LoanApplicationPermissions.Submit); g.MapPost("/{id:guid}/unit-decision", UnitDecision).RequireAuthorization(LoanApplicationPermissions.UnitApprove); g.MapPost("/{id:guid}/committee-decision", CommitteeDecision).RequireAuthorization(LoanApplicationPermissions.CommitteeApprove); }
+    public static void Map(IEndpointRouteBuilder e) { var g = e.MapGroup("/api/v1/loan-applications").WithTags("Loan Applications"); g.MapGet("/", Search).RequireAuthorization(LoanApplicationPermissions.Read); g.MapGet("/{id:guid}", Get).RequireAuthorization(LoanApplicationPermissions.Read); g.MapPost("/", Create).RequireAuthorization(LoanApplicationPermissions.Create); g.MapPut("/{id:guid}", Edit).RequireAuthorization(LoanApplicationPermissions.Update); g.MapPost("/{id:guid}/evaluate-eligibility", Evaluate).RequireAuthorization(LoanApplicationPermissions.EvaluateEligibility); g.MapPost("/{id:guid}/submit", Submit).RequireAuthorization(LoanApplicationPermissions.Submit); g.MapPost("/{id:guid}/unit-decision", UnitDecision).RequireAuthorization(LoanApplicationPermissions.UnitApprove); g.MapPost("/{id:guid}/committee-decision", CommitteeDecision).RequireAuthorization(LoanApplicationPermissions.CommitteeApprove); g.MapPost("/{id:guid}/final-decision", FinalDecision).RequireAuthorization(LoanApplicationPermissions.FinalApprove); }
     static async Task<IResult> Search(Guid? loanApplicationId, Guid? borrowerId, Guid? loanProductId, LoanApplicationStatus? status, int? pageNumber, int? pageSize, LoanApplicationService s, CancellationToken ct)
     {
         var requestedPageNumber = pageNumber ?? 1;
@@ -47,6 +47,17 @@ internal static class LoanApplicationEndpoints
         catch (LoanApplicationConcurrencyException) { return Problem(412, "The loan application changed", "loanApplications.concurrencyConflict"); }
         catch (LoanApplicationStateException) { return Problem(409, "Only Unit Approved applications can receive a Committee decision", "loanApplications.notUnitApproved"); }
         catch (RejectionReasonRequiredException) { return Problem(400, "Rejection reason is required", "loanApplications.rejectionReasonRequired"); }
+    }
+    sealed record FinalDecisionRequest(string? Decision);
+    static async Task<IResult> FinalDecision(Guid id, FinalDecisionRequest input, HttpContext context, LoanApplicationService service, CancellationToken ct)
+    {
+        if (!TryVersion(context.Request, out var version)) return Problem(428, "If-Match is required", "loanApplications.preconditionRequired");
+        if (!string.Equals(input.Decision?.Trim(), "approve", StringComparison.OrdinalIgnoreCase)) return Problem(400, "Final decision is invalid", "loanApplications.invalidFinalDecision");
+        if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actor) || actor == Guid.Empty) return Results.Unauthorized();
+        try { var result = await service.FinalApproveAsync(id, actor, context.TraceIdentifier, version, ct); return result is null ? Problem(404, "Loan application not found", "loanApplications.notFound") : Header(Results.Ok(result), result.ETag); }
+        catch (LoanApplicationConcurrencyException) { return Problem(412, "The loan application changed", "loanApplications.concurrencyConflict"); }
+        catch (FinalApprovalPrerequisitesException) { return Problem(409, "Application is not ready for final approval", "loanApplications.notReadyForFinalApproval"); }
+        catch (InvalidApprovedAmountException) { return Problem(422, "Approved amount is invalid", "loanApplications.invalidApprovedAmount"); }
     }
     static bool TryVersion(HttpRequest r, out byte[] v) { v = []; var raw = r.Headers.IfMatch.ToString().Trim('"'); try { v = Convert.FromBase64String(raw); return v.Length > 0; } catch (FormatException) { return false; } }
     static EtagResult Header(IResult result, string etag) => new EtagResult(result, etag);
