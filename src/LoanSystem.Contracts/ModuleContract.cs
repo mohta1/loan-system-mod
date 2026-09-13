@@ -25,5 +25,5 @@ public interface IDocumentsModule : IModuleContract
     Task<DocumentReferenceContract?> GetAccessibleAsync(Guid documentId, Guid actorUserId, CancellationToken cancellationToken = default);
 }
 
-public sealed record LoanApplicationApprovedV1(Guid EventId, DateTimeOffset OccurredAtUtc, string CorrelationId, Guid LoanApplicationId, Guid BorrowerId, Guid LoanProductId, Guid LoanProductVersionId, decimal ApprovedAmount, string Currency, string FinancingType, DateTimeOffset ApprovedAtUtc);
+public sealed record LoanApplicationApprovedV1(Guid EventId, DateTimeOffset OccurredAtUtc, string CorrelationId, Guid LoanApplicationId, Guid BorrowerId, Guid LoanProductId, Guid LoanProductVersionId, decimal ApprovedAmount, string Currency, string FinancingType, Guid ActorUserId, DateTimeOffset ApprovedAtUtc);
 public interface ILoanApplicationApprovedConsumer : IModuleContract { Task ConsumeAsync(LoanApplicationApprovedV1 message, CancellationToken cancellationToken = default); }
