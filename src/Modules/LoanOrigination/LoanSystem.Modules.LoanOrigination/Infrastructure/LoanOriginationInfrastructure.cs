@@ -45,7 +45,7 @@ public sealed class LoanOriginationDbContext(DbContextOptions<LoanOriginationDbC
     }
     public void AddApprovalOutbox(LoanApplicationApproved approval, string correlationId)
     {
-        var message = new LoanApplicationApprovedV1(approval.EventId, approval.Timestamp, correlationId, approval.LoanApplicationId, approval.BorrowerId, approval.LoanProductId, approval.LoanProductVersionId, approval.ApprovedAmount, approval.Currency, approval.FinancingType, approval.Timestamp);
+        var message = new LoanApplicationApprovedV1(approval.EventId, approval.Timestamp, correlationId, approval.LoanApplicationId, approval.BorrowerId, approval.LoanProductId, approval.LoanProductVersionId, approval.ApprovedAmount, approval.Currency, approval.FinancingType, approval.ActorUserId, approval.Timestamp);
         OutboxMessages.Add(new() { EventId = approval.EventId, EventType = nameof(LoanApplicationApprovedV1), Payload = JsonSerializer.Serialize(message), OccurredAtUtc = approval.Timestamp });
     }
     public async Task SaveAsync(CancellationToken ct) { try { await SaveChangesAsync(ct); } catch (DbUpdateConcurrencyException) { throw new LoanApplicationConcurrencyException(); } }
