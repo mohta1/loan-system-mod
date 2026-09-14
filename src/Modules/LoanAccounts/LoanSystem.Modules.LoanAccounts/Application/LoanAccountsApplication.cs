@@ -27,9 +27,15 @@ public sealed class LoanAccountService(ILoanAccountStore store, IHistoricalLoanP
     public async Task<LoanAccountDto?> ChangeFinancingTypeAsync(Guid loanId, string financingType, Guid actor, string correlationId, byte[] expected, CancellationToken ct)
     {
         var loan = await store.FindAsync(loanId, ct); if (loan is null) return null;
+        // Enforce the HTTP precondition against the version that was actually read before
+        // evaluating business rules. This keeps stale If-Match semantics deterministic (412)
+        // even when another operation has already created a reservation that would also make
+        // the financing-type change invalid. SaveAsync still protects the race after this check.
+        store.Expect(loan, expected);
         var version = products is null ? null : await products.GetDefinitionAsync(loan.LoanProductVersionId, ct);
         if (version is null) throw new UnsupportedFinancingTypeException();
-        loan.ChangeFinancingType(financingType, version.FinancingTypes, actor, correlationId, DateTimeOffset.UtcNow); store.Expect(loan, expected); await store.SaveAsync(ct); return Map(loan);
+        loan.ChangeFinancingType(financingType, version.FinancingTypes, actor, correlationId, DateTimeOffset.UtcNow);
+        await store.SaveAsync(ct); return Map(loan);
     }
     public static LoanAccountDto Map(LoanAccount x) => new(x.LoanId, x.SourceApplicationId, x.BorrowerId, x.LoanProductId, x.LoanProductVersionId, x.ApprovedAmount, x.Currency, x.FinancingType, x.ReservedDisbursementAmount, x.TotalDisbursed, x.AvailableToDisburse, x.TotalRepaid, x.OutstandingBalance, x.Status.ToString(), x.OpenedAtUtc, Convert.ToBase64String(x.RowVersion));
 }
