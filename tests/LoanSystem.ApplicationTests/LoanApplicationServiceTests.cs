@@ -137,6 +137,7 @@ public sealed class LoanApplicationServiceTests
         public Task<LoanApplicationPage> SearchAsync(LoanApplicationSearch s, CancellationToken c) { LastSearch = s; return Task.FromResult(new LoanApplicationPage([], s.PageNumber, s.PageSize, 0)); }
         public Task<int> CountConflictingApplicationsAsync(Guid borrowerId, Guid excludeApplicationId, CancellationToken c) => Task.FromResult(Values.Count(x => x.BorrowerId == borrowerId && x.Id != excludeApplicationId));
         public void Expect(LoanApplication x, byte[] v) { ExpectedApplication = x; ExpectedVersion = v; }
+        public void AddApprovalOutbox(LoanApplicationApproved approval, string correlationId) { }
         public Task SaveAsync(CancellationToken c) { Saved = true; return Task.CompletedTask; }
     }
 }

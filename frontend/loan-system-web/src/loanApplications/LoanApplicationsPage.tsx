@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { borrowersApi } from '../api/borrowers';
@@ -18,12 +18,16 @@ const err = (e: unknown, t: (k: string) => string) =>
   e instanceof ApiError && e.errorCode === 'loanApplications.invalidFinancingType' ? t('invalidFinancingType') :
   t('loanApplicationError');
 
-export function LoanApplicationsPage({ permissions }: { permissions: string[] }) {
+export function LoanApplicationsPage({ permissions, initialApplication = null, onInitialApplicationConsumed }: { permissions: string[]; initialApplication?: LoanApplication | null; onInitialApplicationConsumed?: () => void }) {
   const { t } = useTranslation();
   const q = useQueryClient();
-  const [list, setList] = useState(true);
-  const [selected, setSelected] = useState<LoanApplication | null>(null);
+  const [list, setList] = useState(initialApplication === null);
+  const [selected, setSelected] = useState<LoanApplication | null>(initialApplication);
   const apps = useQuery({ queryKey: ['loanApplications'], queryFn: () => loanApplicationsApi.list() });
+
+  useEffect(() => {
+    if (initialApplication) onInitialApplicationConsumed?.();
+  }, [initialApplication, onInitialApplicationConsumed]);
 
   if (!list) {
     return <ApplicationForm initial={selected} permissions={permissions} close={() => {
@@ -70,8 +74,9 @@ function ApplicationForm({ initial, permissions, close }: { initial: LoanApplica
   });
   const evaluate = useMutation({ mutationFn: () => loanApplicationsApi.evaluate(application!), onSuccess: setApplication });
   const submit = useMutation({ mutationFn: () => loanApplicationsApi.submit(application!), onSuccess: setApplication });
+  const finalApprove = useMutation({ mutationFn: () => loanApplicationsApi.finalApprove(application!), onSuccess: setApplication });
   const readOnly = application !== null && application.status !== 'Draft';
-  const failure = save.error ?? evaluate.error ?? submit.error;
+  const failure = save.error ?? evaluate.error ?? submit.error ?? finalApprove.error;
 
   return <section>
     <button onClick={close}>{t('back')}</button>
@@ -95,6 +100,7 @@ function ApplicationForm({ initial, permissions, close }: { initial: LoanApplica
       <PrerequisitesPanel application={application} permissions={permissions} onChange={setApplication} />
       {dirty && <p role="status">{t('unsavedEligibilityWarning')}</p>}
       {!readOnly && hasPermission(permissions, 'loanApplications.evaluateEligibility') && <button onClick={() => evaluate.mutate()} disabled={dirty || save.isPending || evaluate.isPending}>{t('evaluateEligibility')}</button>}
+      {application?.status === 'ReadyForFinalApproval' && hasPermission(permissions, 'loanApplications.finalApprove') && <button className="primary" onClick={() => finalApprove.mutate()} disabled={finalApprove.isPending}>{t(finalApprove.isPending ? 'approving' : 'finalApprove')}</button>}
       {!readOnly && hasPermission(permissions, 'loanApplications.submit') && <button className="primary" onClick={() => submit.mutate()} disabled={dirty || save.isPending || !application.eligibilityDecision?.isEligible || submit.isPending}>{t('submitApplication')}</button>}
     </>}
     {!readOnly && <form onSubmit={e => { e.preventDefault(); save.mutate(); }}>

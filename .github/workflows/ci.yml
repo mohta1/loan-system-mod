@@ -82,6 +82,13 @@ jobs:
           npx playwright test e2e/inspection-mortgage.spec.ts
           npx playwright test e2e/inspection-mortgage.spec.ts
           npx playwright test e2e/inspection-mortgage.spec.ts
+      - if: ${{ !cancelled() }}
+        name: Rerun TASK-11 final approval and loan account three times against persistent runtime
+        working-directory: frontend/loan-system-web
+        run: |
+          npx playwright test e2e/final-approval-loan-account.spec.ts
+          npx playwright test e2e/final-approval-loan-account.spec.ts
+          npx playwright test e2e/final-approval-loan-account.spec.ts
       - if: always()
         uses: actions/upload-artifact@v4
         with:

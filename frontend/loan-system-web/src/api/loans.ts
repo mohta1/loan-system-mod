@@ -1,0 +1,4 @@
+import{ApiError}from'./identity';
+export type LoanAccount={loanId:string;sourceApplicationId:string;borrowerId:string;loanProductId:string;loanProductVersionId:string;approvedAmount:number;currency:string;financingType:string;reservedDisbursementAmount:number;totalDisbursed:number;availableToDisburse:number;totalRepaid:number;outstandingBalance:number;status:string;openedAtUtc:string;eTag:string};export type LoanPage={items:LoanAccount[];pageNumber:number;pageSize:number;totalCount:number};
+async function call<T>(url:string){const r=await fetch(url);if(r.status===401)dispatchEvent(new Event('identity:unauthorized'));if(!r.ok){let p:{errorCode?:string}={};try{p=await r.json()}catch{/**/}throw new ApiError(r.status,p.errorCode)}return await r.json()as T}
+export const loansApi={list:(query='')=>call<LoanPage>(`/api/v1/loans?${query}`),get:(id:string)=>call<LoanAccount>(`/api/v1/loans/${id}`)};
