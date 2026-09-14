@@ -15,6 +15,7 @@ public sealed record LoanProductEligibility(string RequiredNationality, int Maxi
 public sealed record LoanProductVersionContract(Guid LoanProductId, Guid LoanProductVersionId, string ProductName, int VersionNumber, string ProductStatus, decimal MaximumAmount, string Currency, decimal DeductionPercentage, IReadOnlyList<string> FinancingTypes, LoanProductEligibility EligibilityConfiguration, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string VersionStatus, DateTimeOffset? PublishedAtUtc);
 public sealed record LoanProductVersionLookup(LoanProductVersionLookupStatus Status, LoanProductVersionContract? Version);
 public interface ILoanProductsModule : IModuleContract { Task<LoanProductVersionLookup> GetVersionAsync(Guid versionId, DateOnly businessDate, CancellationToken cancellationToken = default); }
+public interface IHistoricalLoanProductVersions : IModuleContract { Task<LoanProductVersionContract?> GetDefinitionAsync(Guid versionId, CancellationToken cancellationToken = default); }
 
 public sealed record BorrowerContract(Guid BorrowerId, string CivilNumber, string? EmployeeNumber, string FullName, string? PhoneNumber, string Nationality, string Organization, string? RankGrade, string? EmploymentInformation, bool IsActive);
 public interface IBorrowersModule : IModuleContract { Task<BorrowerContract?> GetAsync(Guid borrowerId, CancellationToken cancellationToken = default); }
@@ -27,3 +28,13 @@ public interface IDocumentsModule : IModuleContract
 
 public sealed record LoanApplicationApprovedV1(Guid EventId, DateTimeOffset OccurredAtUtc, string CorrelationId, Guid LoanApplicationId, Guid BorrowerId, Guid LoanProductId, Guid LoanProductVersionId, decimal ApprovedAmount, string Currency, string FinancingType, Guid ActorUserId, DateTimeOffset ApprovedAtUtc);
 public interface ILoanApplicationApprovedConsumer : IModuleContract { Task ConsumeAsync(LoanApplicationApprovedV1 message, CancellationToken cancellationToken = default); }
+
+public sealed record LoanAccountContract(Guid LoanId, Guid BorrowerId, Guid LoanProductId, Guid LoanProductVersionId, decimal ApprovedAmount, string Currency, string FinancingType, decimal ReservedDisbursementAmount, decimal TotalDisbursed, decimal AvailableToDisburse, string Status, string Version);
+public interface ILoanAccountsModule : IModuleContract { Task<LoanAccountContract?> GetAsync(Guid loanId, CancellationToken cancellationToken = default); }
+
+public sealed record DisbursementCapacityRequestedV1(Guid EventId, DateTimeOffset OccurredAtUtc, string CorrelationId, Guid? CausationId, Guid DisbursementId, Guid LoanId, decimal Amount, string Currency, DateTimeOffset RequestedAtUtc);
+public sealed record DisbursementCapacityReservedV1(Guid EventId, DateTimeOffset OccurredAtUtc, string CorrelationId, Guid? CausationId, Guid DisbursementId, Guid LoanId, decimal ReservedAmount, DateTimeOffset ReservedAtUtc, string LoanAccountVersion);
+public sealed record DisbursementCapacityRejectedV1(Guid EventId, DateTimeOffset OccurredAtUtc, string CorrelationId, Guid? CausationId, Guid DisbursementId, Guid LoanId, decimal RequestedAmount, string ReasonCode, string Reason, DateTimeOffset RejectedAtUtc);
+public interface IDisbursementCapacityRequestedConsumer : IModuleContract { Task ConsumeAsync(DisbursementCapacityRequestedV1 message, CancellationToken cancellationToken = default); }
+public interface IDisbursementCapacityReservedConsumer : IModuleContract { Task ConsumeAsync(DisbursementCapacityReservedV1 message, CancellationToken cancellationToken = default); }
+public interface IDisbursementCapacityRejectedConsumer : IModuleContract { Task ConsumeAsync(DisbursementCapacityRejectedV1 message, CancellationToken cancellationToken = default); }

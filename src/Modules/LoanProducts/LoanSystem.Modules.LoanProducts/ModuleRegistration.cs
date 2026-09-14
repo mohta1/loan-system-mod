@@ -14,7 +14,7 @@ public static class ModuleRegistration
 {
     public static IServiceCollection AddLoanProductsModule(this IServiceCollection services, IConfiguration configuration)
     {
-        var connection = configuration.GetConnectionString("LoanSystem") ?? throw new InvalidOperationException("ConnectionStrings:LoanSystem is required."); services.AddDbContext<LoanProductsDbContext>(o => o.UseSqlServer(connection)); services.AddScoped<ILoanProductStore>(x => x.GetRequiredService<LoanProductsDbContext>()); services.AddScoped<ILoanProductsModule, LoanProductsModule>(); services.AddSingleton<IBusinessClock, SystemBusinessClock>(); services.AddScoped<LoanProductService>(); return services;
+        var connection = configuration.GetConnectionString("LoanSystem") ?? throw new InvalidOperationException("ConnectionStrings:LoanSystem is required."); services.AddDbContext<LoanProductsDbContext>(o => o.UseSqlServer(connection)); services.AddScoped<ILoanProductStore>(x => x.GetRequiredService<LoanProductsDbContext>()); services.AddScoped<LoanProductsModule>(); services.AddScoped<ILoanProductsModule>(x => x.GetRequiredService<LoanProductsModule>()); services.AddScoped<IHistoricalLoanProductVersions>(x => x.GetRequiredService<LoanProductsModule>()); services.AddSingleton<IBusinessClock, SystemBusinessClock>(); services.AddScoped<LoanProductService>(); return services;
     }
 
     public static IEndpointRouteBuilder MapLoanProductsModuleEndpoints(this IEndpointRouteBuilder endpoints)

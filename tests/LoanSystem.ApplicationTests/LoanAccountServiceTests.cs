@@ -125,5 +125,8 @@ public sealed class LoanAccountServiceTests
             OccurredAt = occurredAt;
             return Task.CompletedTask;
         }
+        public Task ReserveAsync(LoanSystem.Contracts.DisbursementCapacityRequestedV1 message, CancellationToken ct) => Task.CompletedTask;
+        public void Expect(LoanAccount account, byte[] expected) { }
+        public Task SaveAsync(CancellationToken ct) => Task.CompletedTask;
     }
 }

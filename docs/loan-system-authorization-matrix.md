@@ -48,6 +48,7 @@ Roles are operational groupings. Backend authorization should evaluate permissio
 | inspections.approve | ✓ |  |  |  | ✓ |  |  |  |  |  |  |
 | loans.read | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | loans.close | ✓ | ✓ |  |  |  | ✓ | ✓ |  |  |  |  |
+| loans.changeFinancingType | ✓ | ✓ |  |  |  |  |  |  |  |  |  |
 | disbursements.read | ✓ | ✓ |  |  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | disbursements.create | ✓ | ✓ |  |  | ✓ |  |  |  |  |  |  |
 | disbursements.technicalApprove | ✓ |  |  |  | ✓ |  |  |  |  |  |  |

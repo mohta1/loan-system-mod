@@ -43,3 +43,4 @@ it('shows Committee Review navigation only with committee approval permission',a
  expect(await screen.findByText('Unit User')).toBeInTheDocument();
  expect(screen.queryByRole('button',{name:'Committee Review'})).not.toBeInTheDocument();
 });
+it('shows Disbursements navigation only with read permission',async()=>{applyLanguage('en');vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(json({userId:'1',username:'reader',displayName:'Reader',roles:[],permissions:['disbursements.read']})).mockResolvedValueOnce(json({items:[],pageNumber:1,pageSize:50,totalCount:0})));renderApp();const navigation=await screen.findByRole('button',{name:'Disbursements'});await userEvent.click(navigation);expect(await screen.findByRole('heading',{name:'Disbursements'})).toBeVisible();expect(screen.queryByRole('button',{name:'Loan Accounts'})).not.toBeInTheDocument()});

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { borrowersApi } from '../api/borrowers';
 import { loanApplicationsApi, LoanApplication } from '../api/loanApplications';
 import { LoanAccount, loansApi } from '../api/loans';
 import { hasPermission } from '../app/permissions';
+import { DisbursementDetail, DisbursementRequestForm } from '../disbursements/DisbursementsPage';
 
 const compactId = (value: string) => value.length <= 18 ? value : `${value.slice(0, 8)}…${value.slice(-5)}`;
 
@@ -39,12 +40,18 @@ export function LoanAccountsPage({ permissions = [], onOpenApplication }: { perm
 
 function LoanDetails({ loan, permissions, onOpenApplication, back }: { loan: LoanAccount; permissions: string[]; onOpenApplication?: (application: LoanApplication) => void; back: () => void }) {
   const { t } = useTranslation();
+  const client = useQueryClient();
+  const [createdDisbursement, setCreatedDisbursement] = useState<string>();
+  const [financingType, setFinancingType] = useState(loan.financingType);
   const q = useQuery({ queryKey: ['loan', loan.loanId], queryFn: () => loansApi.get(loan.loanId), initialData: loan });
   const canReadBorrower = hasPermission(permissions, 'borrowers.read');
   const canReadApplication = hasPermission(permissions, 'loanApplications.read');
   const borrower = useQuery({ queryKey: ['borrower', loan.borrowerId], queryFn: () => borrowersApi.get(loan.borrowerId), enabled: canReadBorrower });
   const application = useQuery({ queryKey: ['loanApplication', loan.sourceApplicationId], queryFn: () => loanApplicationsApi.get(loan.sourceApplicationId), enabled: canReadApplication });
   const x = q.data;
+  const changeType = useMutation({mutationFn:()=>loansApi.changeFinancingType(x.loanId,financingType,x.eTag),onSuccess:value=>client.setQueryData(['loan',loan.loanId],value)});
+
+  if(createdDisbursement)return <DisbursementDetail id={createdDisbursement} back={()=>setCreatedDisbursement(undefined)}/>;
 
   return <section>
     <button onClick={back}>{t('back')}</button>
@@ -82,5 +89,7 @@ function LoanDetails({ loan, permissions, onOpenApplication, back }: { loan: Loa
       <dt>{t('outstandingBalance')}</dt><dd>{x.outstandingBalance} {x.currency}</dd>
       <dt>{t('status')}</dt><dd>{t(x.status.toLowerCase())}</dd>
     </dl>}
+    {hasPermission(permissions,'loans.changeFinancingType')&&x.totalDisbursed===0&&x.reservedDisbursementAmount===0&&application.data&&<form onSubmit={e=>{e.preventDefault();changeType.mutate()}}><h2>{t('changeFinancingType')}</h2><label>{t('changeFinancingType')}<select value={financingType} onChange={e=>setFinancingType(e.target.value)}>{application.data.productSnapshot.financingTypes.map(type=><option key={type}>{type}</option>)}</select></label><button disabled={changeType.isPending||financingType===x.financingType}>{t('confirmChange')}</button>{changeType.isError&&<p role="alert">{t('financingTypeChangeError')}</p>}</form>}
+    {hasPermission(permissions,'disbursements.create')&&<DisbursementRequestForm loanId={x.loanId} currency={x.currency} available={x.availableToDisburse} onCreated={value=>setCreatedDisbursement(value.disbursementId)}/>}
   </section>;
 }
