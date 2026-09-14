@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\LoanSystem.Api\LoanSystem.Api.csproj" />
     <ProjectReference Include="..\..\src\Modules\LoanOrigination\LoanSystem.Modules.LoanOrigination\LoanSystem.Modules.LoanOrigination.csproj" />
     <ProjectReference Include="..\..\src\Modules\LoanAccounts\LoanSystem.Modules.LoanAccounts\LoanSystem.Modules.LoanAccounts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Disbursements\LoanSystem.Modules.Disbursements\LoanSystem.Modules.Disbursements.csproj" />
   </ItemGroup>
 
 </Project>

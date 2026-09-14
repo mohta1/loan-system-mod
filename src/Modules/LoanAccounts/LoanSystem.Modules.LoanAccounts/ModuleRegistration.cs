@@ -19,7 +19,7 @@ public static class ModuleRegistration
         var connection = configuration.GetConnectionString("LoanSystem") ?? throw new InvalidOperationException("ConnectionStrings:LoanSystem is required.");
         services.AddDbContext<LoanAccountsDbContext>(options => options.UseSqlServer(connection));
         services.AddScoped<ILoanAccountStore>(x => x.GetRequiredService<LoanAccountsDbContext>());
-        services.AddScoped<LoanAccountService>(); services.AddScoped<ILoanApplicationApprovedConsumer>(x => x.GetRequiredService<LoanAccountService>());
+        services.AddScoped<LoanAccountService>(); services.AddScoped<ILoanApplicationApprovedConsumer>(x => x.GetRequiredService<LoanAccountService>()); services.AddScoped<IDisbursementCapacityRequestedConsumer>(x => x.GetRequiredService<LoanAccountService>()); services.AddScoped<ILoanAccountsModule>(x => x.GetRequiredService<LoanAccountService>()); services.AddHostedService<LoanAccountOutboxDispatcher>();
         return services;
     }
 
