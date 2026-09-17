@@ -41,7 +41,7 @@ public sealed class DisbursementsDbContext(DbContextOptions<DisbursementsDbConte
                 await tx.CommitAsync(ct);
                 return new(IdempotentCreateOutcome.Created, value);
             }
-            catch (Exception ex) when (IsUniqueViolation(ex))
+            catch (Exception ex) when (HasSqlNumber(ex, 2601, 2627))
             {
                 await tx.RollbackAsync(CancellationToken.None);
                 ChangeTracker.Clear();
@@ -64,8 +64,13 @@ public sealed class DisbursementsDbContext(DbContextOptions<DisbursementsDbConte
         var existing = await Disbursements.Include("_supportingDocuments").AsNoTracking().SingleAsync(x => x.DisbursementId == record.ResourceId, ct);
         return new(record.RequestHash == requestHash ? IdempotentCreateOutcome.Replayed : IdempotentCreateOutcome.Conflict, existing);
     }
-    private static bool IsUniqueViolation(Exception ex) => ex is Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 } || ex is DbUpdateException { InnerException: Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 } };
-    private static bool IsRetryable(Exception ex) => ex is DbUpdateConcurrencyException || ex is Microsoft.Data.SqlClient.SqlException { Number: 1205 } || ex is DbUpdateException { InnerException: Microsoft.Data.SqlClient.SqlException { Number: 1205 } };
+    private static bool IsRetryable(Exception ex) => ex is DbUpdateConcurrencyException || HasSqlNumber(ex, 1205);
+    private static bool HasSqlNumber(Exception? ex, params int[] numbers)
+    {
+        for (var current = ex; current is not null; current = current.InnerException)
+            if (current is Microsoft.Data.SqlClient.SqlException sql && numbers.Contains(sql.Number)) return true;
+        return false;
+    }
     public Task ApplyReservedAsync(DisbursementCapacityReservedV1 message, CancellationToken ct) => ApplyAsync(message.EventId, message.OccurredAtUtc, message.DisbursementId, x => x.CapacityReserved(message.LoanId, message.ReservedAmount, message.ReservedAtUtc), ct);
     public Task ApplyRejectedAsync(DisbursementCapacityRejectedV1 message, CancellationToken ct) => ApplyAsync(message.EventId, message.OccurredAtUtc, message.DisbursementId, x => x.CapacityRejected(message.LoanId, message.RequestedAmount, message.ReasonCode, message.Reason, message.RejectedAtUtc), ct);
     private async Task ApplyAsync(Guid eventId, DateTimeOffset occurredAt, Guid disbursementId, Action<Disbursement> transition, CancellationToken ct) { await using var tx = await Database.BeginTransactionAsync(ct); if (await InboxMessages.AnyAsync(x => x.EventId == eventId, ct)) { await tx.CommitAsync(ct); return; } var value = await Disbursements.SingleOrDefaultAsync(x => x.DisbursementId == disbursementId, ct) ?? throw new InvalidOperationException("Capacity response references an unknown disbursement."); transition(value); InboxMessages.Add(new() { EventId = eventId, OccurredAtUtc = occurredAt, ProcessedAtUtc = DateTimeOffset.UtcNow }); await SaveChangesAsync(ct); await tx.CommitAsync(ct); }
