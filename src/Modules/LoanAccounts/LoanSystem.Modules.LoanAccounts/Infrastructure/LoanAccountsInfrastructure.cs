@@ -28,7 +28,7 @@ public sealed class LoanAccountsDbContext(DbContextOptions<LoanAccountsDbContext
         if (await InboxMessages.AnyAsync(x => x.EventId == eventId, ct) || await LoanAccounts.AnyAsync(x => x.SourceApplicationId == account.SourceApplicationId, ct)) { await transaction.CommitAsync(ct); return; }
         LoanAccounts.Add(account); InboxMessages.Add(new() { EventId = eventId, OccurredAtUtc = occurredAt, ProcessedAtUtc = DateTimeOffset.UtcNow });
         try { await SaveChangesAsync(ct); await transaction.CommitAsync(ct); }
-        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.SqlClient.SqlException sql && sql.Number is 2601 or 2627) { await transaction.RollbackAsync(ct); ChangeTracker.Clear(); }
+        catch (DbUpdateException ex) when (HasSqlNumber(ex, 2601, 2627)) { await transaction.RollbackAsync(ct); ChangeTracker.Clear(); }
     }
     public async Task<LoanAccountPage> SearchAsync(LoanAccountSearch search, CancellationToken ct) { var q = LoanAccounts.AsNoTracking(); if (search.LoanId.HasValue) q = q.Where(x => x.LoanId == search.LoanId); if (search.SourceApplicationId.HasValue) q = q.Where(x => x.SourceApplicationId == search.SourceApplicationId); if (search.BorrowerId.HasValue) q = q.Where(x => x.BorrowerId == search.BorrowerId); if (search.Status.HasValue) q = q.Where(x => x.Status == search.Status); var count = await q.CountAsync(ct); var values = await q.OrderByDescending(x => x.OpenedAtUtc).ThenBy(x => x.LoanId).Skip((search.PageNumber - 1) * search.PageSize).Take(search.PageSize).ToListAsync(ct); return new(values.Select(LoanAccountService.Map).ToArray(), search.PageNumber, search.PageSize, count); }
     public void Expect(LoanAccount account, byte[] expected) { if (!account.RowVersion.AsSpan().SequenceEqual(expected)) throw new LoanAccountConcurrencyException(); Entry(account).Property(x => x.RowVersion).OriginalValue = expected; }
@@ -56,5 +56,11 @@ public sealed class LoanAccountsDbContext(DbContextOptions<LoanAccountsDbContext
             catch (Exception ex) when (attempt < 4 && IsRetryable(ex)) { await transaction.RollbackAsync(CancellationToken.None); await Task.Delay(20 * (attempt + 1), ct); }
         }
     }
-    private static bool IsRetryable(Exception ex) => ex is DbUpdateConcurrencyException || ex is Microsoft.Data.SqlClient.SqlException { Number: 1205 } || ex is DbUpdateException { InnerException: Microsoft.Data.SqlClient.SqlException { Number: 1205 } };
+    private static bool IsRetryable(Exception ex) => ex is DbUpdateConcurrencyException || HasSqlNumber(ex, 1205);
+    private static bool HasSqlNumber(Exception? ex, params int[] numbers)
+    {
+        for (var current = ex; current is not null; current = current.InnerException)
+            if (current is Microsoft.Data.SqlClient.SqlException sql && numbers.Contains(sql.Number)) return true;
+        return false;
+    }
 }
