@@ -253,7 +253,7 @@ internal sealed class FinancingTypeConfiguration : IEntityTypeConfiguration<Loan
     }
 }
 
-public sealed class LoanProductsModule(LoanProductsDbContext database) : ILoanProductsModule
+public sealed class LoanProductsModule(LoanProductsDbContext database) : ILoanProductsModule, IHistoricalLoanProductVersions
 {
     public async Task<LoanProductVersionLookup> GetVersionAsync(Guid versionId, DateOnly businessDate, CancellationToken cancellationToken = default)
     {
@@ -291,5 +291,13 @@ public sealed class LoanProductsModule(LoanProductsDbContext database) : ILoanPr
             version.Status.ToString(),
             version.PublishedAtUtc);
         return new(status, contract);
+    }
+    public async Task<LoanProductVersionContract?> GetDefinitionAsync(Guid versionId, CancellationToken cancellationToken = default)
+    {
+        var version = await database.Versions.AsNoTracking().Include(value => value.FinancingTypes).SingleOrDefaultAsync(value => value.Id == versionId, cancellationToken);
+        if (version is null) return null;
+        var product = await database.Products.AsNoTracking().SingleAsync(value => value.Id == version.LoanProductId, cancellationToken);
+        var eligibility = version.EligibilityConfiguration;
+        return new(product.Id, version.Id, product.Name, version.VersionNumber, product.Status.ToString(), version.MaximumAmount, version.Currency, version.DeductionPercentage, version.FinancingTypes.Select(x => x.Value).ToArray(), new(eligibility.RequiredNationality, eligibility.MaximumApplicationCount, eligibility.RankGradeAmountRules.Select(x => new LoanProductRankGradeRule(x.RankGrade, x.MaximumAmount)).ToArray(), eligibility.Term.MaximumTermMonths, eligibility.Term.DueDateRule), version.EffectiveFrom, version.EffectiveTo, version.Status.ToString(), version.PublishedAtUtc);
     }
 }
