@@ -25,8 +25,47 @@ public sealed class DisbursementsDbContext(DbContextOptions<DisbursementsDbConte
     public async Task<DisbursementPage> SearchAsync(DisbursementSearch search, CancellationToken ct) { var q = Disbursements.AsNoTracking(); if (search.LoanId.HasValue) q = q.Where(x => x.LoanId == search.LoanId); if (search.Status.HasValue) q = q.Where(x => x.Status == search.Status); var count = await q.CountAsync(ct); var rows = await q.OrderByDescending(x => x.CreatedAtUtc).ThenBy(x => x.DisbursementId).Skip((search.PageNumber - 1) * search.PageSize).Take(search.PageSize).ToListAsync(ct); return new(rows.Select(x => new DisbursementListItem(x.DisbursementId, x.LoanId, x.Amount, x.Currency, x.Beneficiary.DisplayName, x.Beneficiary.Type.ToString(), x.Status.ToString(), x.CapacityReservationStatus.ToString(), x.CreatedAtUtc)).ToArray(), search.PageNumber, search.PageSize, count); }
     public async Task<IdempotentCreateResult> CreateAsync(Disbursement value, string scope, Guid actor, string keyHash, string requestHash, DisbursementCapacityRequestedV1 message, CancellationToken ct)
     {
-        for (var attempt = 0; ; attempt++) { ChangeTracker.Clear(); await using var tx = await Database.BeginTransactionAsync(IsolationLevel.Serializable, ct); try { var record = await IdempotencyRecords.SingleOrDefaultAsync(x => x.Scope == scope && x.ActorUserId == actor && x.KeyHash == keyHash, ct); if (record is not null) { var existing = await Disbursements.Include("_supportingDocuments").SingleAsync(x => x.DisbursementId == record.ResourceId, ct); await tx.CommitAsync(ct); return new(record.RequestHash == requestHash ? IdempotentCreateOutcome.Replayed : IdempotentCreateOutcome.Conflict, existing); } Disbursements.Add(value); IdempotencyRecords.Add(new() { Id = Guid.NewGuid(), Scope = scope, ActorUserId = actor, KeyHash = keyHash, RequestHash = requestHash, ResourceId = value.DisbursementId, CreatedAtUtc = value.CreatedAtUtc }); OutboxMessages.Add(new() { EventId = message.EventId, EventType = nameof(DisbursementCapacityRequestedV1), Payload = JsonSerializer.Serialize(message), OccurredAtUtc = message.OccurredAtUtc }); await SaveChangesAsync(ct); await tx.CommitAsync(ct); return new(IdempotentCreateOutcome.Created, value); } catch (Exception ex) when (attempt < 4 && (ex is DbUpdateConcurrencyException || ex is Microsoft.Data.SqlClient.SqlException { Number: 1205 or 2601 or 2627 } || ex is DbUpdateException)) { await tx.RollbackAsync(CancellationToken.None); await Task.Delay(20 * (attempt + 1), ct); } }
+        for (var attempt = 0; ; attempt++)
+        {
+            ChangeTracker.Clear();
+            await using var tx = await Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+            try
+            {
+                var existing = await FindIdempotentResultAsync(scope, actor, keyHash, requestHash, ct);
+                if (existing is not null) { await tx.CommitAsync(ct); return existing; }
+
+                Disbursements.Add(value);
+                IdempotencyRecords.Add(new() { Id = Guid.NewGuid(), Scope = scope, ActorUserId = actor, KeyHash = keyHash, RequestHash = requestHash, ResourceId = value.DisbursementId, CreatedAtUtc = value.CreatedAtUtc });
+                OutboxMessages.Add(new() { EventId = message.EventId, EventType = nameof(DisbursementCapacityRequestedV1), Payload = JsonSerializer.Serialize(message), OccurredAtUtc = message.OccurredAtUtc });
+                await SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+                return new(IdempotentCreateOutcome.Created, value);
+            }
+            catch (Exception ex) when (IsUniqueViolation(ex))
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                ChangeTracker.Clear();
+                var winner = await FindIdempotentResultAsync(scope, actor, keyHash, requestHash, ct);
+                if (winner is not null) return winner;
+                if (attempt >= 4) throw;
+                await Task.Delay(20 * (attempt + 1), ct);
+            }
+            catch (Exception ex) when (attempt < 4 && IsRetryable(ex))
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                await Task.Delay(20 * (attempt + 1), ct);
+            }
+        }
     }
+    private async Task<IdempotentCreateResult?> FindIdempotentResultAsync(string scope, Guid actor, string keyHash, string requestHash, CancellationToken ct)
+    {
+        var record = await IdempotencyRecords.AsNoTracking().SingleOrDefaultAsync(x => x.Scope == scope && x.ActorUserId == actor && x.KeyHash == keyHash, ct);
+        if (record is null) return null;
+        var existing = await Disbursements.Include("_supportingDocuments").AsNoTracking().SingleAsync(x => x.DisbursementId == record.ResourceId, ct);
+        return new(record.RequestHash == requestHash ? IdempotentCreateOutcome.Replayed : IdempotentCreateOutcome.Conflict, existing);
+    }
+    private static bool IsUniqueViolation(Exception ex) => ex is Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 } || ex is DbUpdateException { InnerException: Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 } };
+    private static bool IsRetryable(Exception ex) => ex is DbUpdateConcurrencyException || ex is Microsoft.Data.SqlClient.SqlException { Number: 1205 } || ex is DbUpdateException { InnerException: Microsoft.Data.SqlClient.SqlException { Number: 1205 } };
     public Task ApplyReservedAsync(DisbursementCapacityReservedV1 message, CancellationToken ct) => ApplyAsync(message.EventId, message.OccurredAtUtc, message.DisbursementId, x => x.CapacityReserved(message.LoanId, message.ReservedAmount, message.ReservedAtUtc), ct);
     public Task ApplyRejectedAsync(DisbursementCapacityRejectedV1 message, CancellationToken ct) => ApplyAsync(message.EventId, message.OccurredAtUtc, message.DisbursementId, x => x.CapacityRejected(message.LoanId, message.RequestedAmount, message.ReasonCode, message.Reason, message.RejectedAtUtc), ct);
     private async Task ApplyAsync(Guid eventId, DateTimeOffset occurredAt, Guid disbursementId, Action<Disbursement> transition, CancellationToken ct) { await using var tx = await Database.BeginTransactionAsync(ct); if (await InboxMessages.AnyAsync(x => x.EventId == eventId, ct)) { await tx.CommitAsync(ct); return; } var value = await Disbursements.SingleOrDefaultAsync(x => x.DisbursementId == disbursementId, ct) ?? throw new InvalidOperationException("Capacity response references an unknown disbursement."); transition(value); InboxMessages.Add(new() { EventId = eventId, OccurredAtUtc = occurredAt, ProcessedAtUtc = DateTimeOffset.UtcNow }); await SaveChangesAsync(ct); await tx.CommitAsync(ct); }
