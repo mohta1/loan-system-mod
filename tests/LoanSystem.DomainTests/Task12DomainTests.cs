@@ -53,5 +53,20 @@ public sealed class Task12DomainTests
         Assert.Throws<DisbursementValidationException>(() => Disbursement.Create(Guid.NewGuid(), Guid.NewGuid(), 0, "OMR", beneficiary, [], Guid.NewGuid(), "c", "t", DateTimeOffset.UtcNow));
         Assert.Throws<DisbursementValidationException>(() => Disbursement.Create(Guid.NewGuid(), Guid.NewGuid(), 1, "OMR", beneficiary with { BankName = "" }, [], Guid.NewGuid(), "c", "t", DateTimeOffset.UtcNow));
     }
+    [Fact]
+    public void Disbursement_rejects_invalid_identity_currency_documents_and_response_data()
+    {
+        var loanId = Guid.NewGuid(); var actor = Guid.NewGuid(); var at = DateTimeOffset.UtcNow;
+        var beneficiary = new BeneficiarySnapshot(BeneficiaryType.Contractor, " Builder ", " Holder ", " Bank ", " Account ");
+        Assert.Throws<DisbursementValidationException>(() => Disbursement.Create(Guid.Empty, loanId, 1, "OMR", beneficiary, [], actor, "c", "t", at));
+        Assert.Throws<DisbursementValidationException>(() => Disbursement.Create(Guid.NewGuid(), loanId, 1, "OM", beneficiary, [], actor, "c", "t", at));
+        Assert.Throws<DisbursementValidationException>(() => Disbursement.Create(Guid.NewGuid(), loanId, 1, "OMR", beneficiary, [Guid.Empty], actor, "c", "t", at));
+
+        var value = Disbursement.Create(Guid.NewGuid(), loanId, 10, " omr ", beneficiary, [], actor, "c", "t", at);
+        Assert.Equal("OMR", value.Currency);
+        Assert.Equal("Builder", value.Beneficiary.DisplayName);
+        Assert.Throws<DisbursementResponseConflictException>(() => value.CapacityReserved(loanId, 9, at));
+        Assert.Throws<DisbursementResponseConflictException>(() => value.CapacityRejected(loanId, 10, "", "reason", at));
+    }
     private static void Set<T>(LoanAccount loan, string property, T value) => typeof(LoanAccount).GetProperty(property)!.SetValue(loan, value);
 }
